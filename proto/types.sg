@@ -1,0 +1,31 @@
+pragma module;
+
+pub const PROTO_ERR_BAD_CMD: uint = 1;
+pub const PROTO_ERR_INVALID_JSON: uint = 2;
+
+pub tag Ping();
+pub tag WhoAmI();
+pub tag New(string, string);
+pub tag Get(string);
+pub tag Set(string, string);
+pub tag SetIf(string, string, uint);
+pub tag Del(string);
+pub tag Own(string, uint?);
+pub tag Borrow(string, uint?);
+pub tag Release(string);
+pub tag Seal(string);
+pub tag Stat(string);
+pub tag Keys(string?);
+pub tag Disconnect();
+
+pub type Command = Ping() | WhoAmI() | New(string, string) | Get(string) | Set(string, string) | SetIf(string, string, uint) | Del(string) | Own(string, uint?) | Borrow(string, uint?) | Release(string) | Seal(string) | Stat(string) | Keys(string?) | Disconnect();
+
+type TokenTail = {
+    head: string,
+    tail: string?,
+};
+
+type LeaseArgs = {
+    key: string,
+    ttl: uint?,
+};

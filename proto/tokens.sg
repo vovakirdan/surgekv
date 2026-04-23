@@ -1,0 +1,61 @@
+pragma module;
+
+import stdlib/json as json;
+
+fn tokenize(input: &string) -> Erring<TokenTail, Error> {
+    let trimmed: string = input.trim();
+    if trimmed.__len() == 0:uint {
+        return Error { message = "empty command", code = PROTO_ERR_BAD_CMD };
+    }
+
+    let space_idx: int = trimmed.find(" ");
+    if space_idx < 0 {
+        let tail: string? = nothing;
+        return Success(TokenTail { head = trimmed, tail = tail });
+    }
+
+    let head: string = trimmed[[0..space_idx]];
+    let rest: string = trimmed[[space_idx + 1..trimmed.__len() to int]].trim();
+    if rest.__len() == 0:uint {
+        let tail: string? = nothing;
+        return Success(TokenTail { head = head, tail = tail });
+    }
+
+    return Success(TokenTail { head = head, tail = Some(rest) });
+}
+
+fn ensure_no_tail(tail: string?, usage: &string) -> Erring<nothing, Error> {
+    compare tail {
+        nothing => {
+            return Success(nothing);
+        }
+        Some(_) => {
+            return unit_usage_error(usage);
+        }
+    };
+}
+
+fn ensure_json(text: &string) -> Erring<nothing, Error> {
+    compare json.parse(text) {
+        Success(_) => {
+            return Success(nothing);
+        }
+        err => {
+            return Error {
+                message = "invalid json: " + err.message.__clone(),
+                code = PROTO_ERR_INVALID_JSON
+            };
+        }
+    };
+}
+
+fn parse_uint_token(text: &string, message: &string) -> Erring<uint, Error> {
+    compare uint.from_str(text) {
+        Success(value) => {
+            return Success(value);
+        }
+        _ => {
+            return proto_error(PROTO_ERR_BAD_CMD, message);
+        }
+    };
+}

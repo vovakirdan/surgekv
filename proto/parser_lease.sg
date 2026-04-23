@@ -1,0 +1,88 @@
+pragma module;
+
+fn parse_lease_tail(rest: string?, usage: &string) -> Erring<LeaseArgs, Error> {
+    compare rest {
+        nothing => {
+            return lease_usage_error(usage);
+        }
+        Some(raw) => {
+            compare tokenize(&raw) {
+                Success(parts) => {
+                    compare parts.tail {
+                        nothing => {
+                            let ttl: uint? = nothing;
+                            return Success(LeaseArgs { key = parts.head, ttl = ttl });
+                        }
+                        Some(tail) => {
+                            compare tokenize(&tail) {
+                                Success(ttl_kw) => {
+                                    if ttl_kw.head != "TTL" {
+                                        return lease_usage_error(usage);
+                                    }
+
+                                    compare ttl_kw.tail {
+                                        nothing => {
+                                            return lease_usage_error(usage);
+                                        }
+                                        Some(ttl_tail) => {
+                                            compare tokenize(&ttl_tail) {
+                                                Success(ttl_parts) => {
+                                                    compare ensure_no_tail(ttl_parts.tail, usage) {
+                                                        Success(_) => {
+                                                            compare parse_uint_token(&ttl_parts.head, usage) {
+                                                                Success(ttl) => {
+                                                                    return Success(LeaseArgs { key = parts.head, ttl = Some(ttl) });
+                                                                }
+                                                                err => {
+                                                                    return err;
+                                                                }
+                                                            };
+                                                        }
+                                                        err => {
+                                                            return err;
+                                                        }
+                                                    };
+                                                }
+                                                err => {
+                                                    return err;
+                                                }
+                                            };
+                                        }
+                                    };
+                                }
+                                err => {
+                                    return err;
+                                }
+                            };
+                        }
+                    };
+                }
+                err => {
+                    return err;
+                }
+            };
+        }
+    };
+}
+
+fn parse_own_cmd(rest: string?) -> Erring<Command, Error> {
+    compare parse_lease_tail(rest, &"OWN <key> [TTL <seconds>]") {
+        Success(args) => {
+            return Success(Own(args.key, args.ttl));
+        }
+        err => {
+            return err;
+        }
+    };
+}
+
+fn parse_borrow_cmd(rest: string?) -> Erring<Command, Error> {
+    compare parse_lease_tail(rest, &"BORROW <key> [TTL <seconds>]") {
+        Success(args) => {
+            return Success(Borrow(args.key, args.ttl));
+        }
+        err => {
+            return err;
+        }
+    };
+}

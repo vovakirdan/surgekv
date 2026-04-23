@@ -1,0 +1,28 @@
+pragma module;
+
+pub fn format_ok(version: uint?, ttl: uint?) -> string {
+    let mut out: string = "OK";
+    compare version {
+        Some(value) => {
+            out = out + " version=" + (value to string);
+            0:int;
+        }
+        nothing => 0:int;
+    };
+    compare ttl {
+        Some(value) => {
+            out = out + " ttl=" + (value to string);
+            0:int;
+        }
+        nothing => 0:int;
+    };
+    return out;
+}
+
+pub fn format_value(json_text: &string) -> string {
+    return "VALUE " + *json_text;
+}
+
+pub fn format_error(code: &string, message: &string) -> string {
+    return "ERROR " + *code + " " + *message;
+}

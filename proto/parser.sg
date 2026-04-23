@@ -1,0 +1,54 @@
+pragma module;
+
+pub fn parse_line(line: &string) -> Erring<Command, Error> {
+    compare tokenize(line) {
+        Success(parts) => {
+            if parts.head == "PING" {
+                compare ensure_no_tail(parts.tail, &"PING") {
+                    Success(_) => return Success(Ping());
+                    err => return err;
+                };
+            }
+            if parts.head == "WHOAMI" {
+                compare ensure_no_tail(parts.tail, &"WHOAMI") {
+                    Success(_) => return Success(WhoAmI());
+                    err => return err;
+                };
+            }
+            if parts.head == "NEW" {
+                return parse_new_cmd(parts.tail);
+            }
+            if parts.head == "GET" {
+                return parse_get_cmd(parts.tail);
+            }
+            if parts.head == "SET" {
+                return parse_set_cmd(parts.tail);
+            }
+            if parts.head == "DEL" {
+                return parse_del_cmd(parts.tail);
+            }
+            if parts.head == "OWN" {
+                return parse_own_cmd(parts.tail);
+            }
+            if parts.head == "BORROW" {
+                return parse_borrow_cmd(parts.tail);
+            }
+            if parts.head == "RELEASE" {
+                return parse_release_cmd(parts.tail);
+            }
+            if parts.head == "SEAL" {
+                return parse_seal_cmd(parts.tail);
+            }
+            if parts.head == "STAT" {
+                return parse_stat_cmd(parts.tail);
+            }
+            if parts.head == "KEYS" {
+                return parse_keys_cmd(parts.tail);
+            }
+            return bad_cmd(&"unknown command");
+        }
+        err => {
+            return err;
+        }
+    };
+}

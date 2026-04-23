@@ -1,0 +1,83 @@
+pragma module;
+
+fn parse_new_cmd(rest: string?) -> Erring<Command, Error> {
+    compare rest {
+        nothing => {
+            return usage_error(&"NEW <key> <json>");
+        }
+        Some(raw) => {
+            compare tokenize(&raw) {
+                Success(parts) => {
+                    compare parts.tail {
+                        nothing => {
+                            return usage_error(&"NEW <key> <json>");
+                        }
+                        Some(value_tail) => {
+                            compare ensure_json(&value_tail) {
+                                Success(_) => {
+                                    return Success(New(parts.head, value_tail));
+                                }
+                                err => {
+                                    return err;
+                                }
+                            };
+                        }
+                    };
+                }
+                err => {
+                    return err;
+                }
+            };
+        }
+    };
+}
+
+fn parse_set_cmd(rest: string?) -> Erring<Command, Error> {
+    compare rest {
+        nothing => {
+            return usage_error(&"SET <key> <json> [IF <version>]");
+        }
+        Some(raw) => {
+            compare tokenize(&raw) {
+                Success(parts) => {
+                    compare parts.tail {
+                        nothing => {
+                            return usage_error(&"SET <key> <json> [IF <version>]");
+                        }
+                        Some(value_tail) => {
+                            let if_idx: int = value_tail.rfind(" IF ");
+                            if if_idx >= 0 {
+                                let value_len: int = value_tail.__len() to int;
+                                let json_part: string = value_tail[[0..if_idx]].trim();
+                                let version_part: string = value_tail[[if_idx + 4..value_len]].trim();
+                                compare ensure_json(&json_part) {
+                                    Success(_) => {
+                                        compare parse_uint_token(&version_part, &"SET <key> <json> IF <version>") {
+                                            Success(version) => {
+                                                return Success(SetIf(parts.head, json_part, version));
+                                            }
+                                            _ => 0:int;
+                                        };
+                                    }
+                                    _ => 0:int;
+                                };
+                            }
+
+                            compare ensure_json(&value_tail) {
+                                Success(_) => {
+                                    return Success(Set(parts.head, value_tail));
+                                }
+                                err => {
+                                    return err;
+                                }
+                            };
+                        }
+                    };
+                }
+                err => {
+                    return err;
+                }
+            };
+        }
+    };
+}

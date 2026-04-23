@@ -1,0 +1,12 @@
+# Surge project
+*.o
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Surge build artifacts
+target/
+
+# Surge dependencies
+deps/

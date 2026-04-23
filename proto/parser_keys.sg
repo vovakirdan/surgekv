@@ -1,0 +1,93 @@
+pragma module;
+
+fn parse_key_tail(rest: string?, usage: &string) -> Erring<string, Error> {
+    compare rest {
+        nothing => {
+            return string_usage_error(usage);
+        }
+        Some(raw) => {
+            compare tokenize(&raw) {
+                Success(parts) => {
+                    compare ensure_no_tail(parts.tail, usage) {
+                        Success(_) => {
+                            return Success(parts.head);
+                        }
+                        err => {
+                            return err;
+                        }
+                    };
+                }
+                err => {
+                    return err;
+                }
+            };
+        }
+    };
+}
+
+fn parse_get_cmd(rest: string?) -> Erring<Command, Error> {
+    compare parse_key_tail(rest, &"GET <key>") {
+        Success(key) => {
+            return Success(Get(key));
+        }
+        err => {
+            return err;
+        }
+    };
+}
+
+fn parse_del_cmd(rest: string?) -> Erring<Command, Error> {
+    compare parse_key_tail(rest, &"DEL <key>") {
+        Success(key) => {
+            return Success(Del(key));
+        }
+        err => {
+            return err;
+        }
+    };
+}
+
+fn parse_release_cmd(rest: string?) -> Erring<Command, Error> {
+    compare parse_key_tail(rest, &"RELEASE <key>") {
+        Success(key) => {
+            return Success(Release(key));
+        }
+        err => {
+            return err;
+        }
+    };
+}
+
+fn parse_seal_cmd(rest: string?) -> Erring<Command, Error> {
+    compare parse_key_tail(rest, &"SEAL <key>") {
+        Success(key) => {
+            return Success(Seal(key));
+        }
+        err => {
+            return err;
+        }
+    };
+}
+
+fn parse_stat_cmd(rest: string?) -> Erring<Command, Error> {
+    compare parse_key_tail(rest, &"STAT <key>") {
+        Success(key) => {
+            return Success(Stat(key));
+        }
+        err => {
+            return err;
+        }
+    };
+}
+
+fn parse_keys_cmd(rest: string?) -> Erring<Command, Error> {
+    compare rest {
+        nothing => {
+            let pattern: string? = nothing;
+            return Success(Keys(pattern));
+        }
+        Some(pattern) => {
+            return Success(Keys(Some(pattern)));
+        }
+    };
+}

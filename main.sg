@@ -1,0 +1,8 @@
+pragma module;
+
+import proto as proto;
+
+@entrypoint
+fn main() {
+    let _ = proto.parse_line(&"PING");
+}

@@ -1,0 +1,26 @@
+pragma module;
+
+import stdlib/directives/test;
+
+/// test:
+/// ParsePing:
+/// let cmd = parse_line(&"PING").safe();
+/// test.assert(compare cmd { Ping() => true; _ => false; });
+///
+/// ParseSetIf:
+/// let cmd = parse_line(&"SET counter 42 IF 5").safe();
+/// test.assert(compare cmd { SetIf(key, value, version) => key == "counter" && value == "42" && version == 5:uint; _ => false; });
+///
+/// ParseOwnTtl:
+/// let cmd = parse_line(&"OWN session:42 TTL 30").safe();
+/// test.assert(compare cmd { Own(key, Some(ttl)) => key == "session:42" && ttl == 30:uint; _ => false; });
+///
+/// RejectBadJson:
+/// let res = parse_line(&"NEW broken {");
+/// test.assert(res.is_error());
+///
+/// FormatOkVersion:
+/// test.eq::<string>(format_ok(Some(7:uint), nothing), "OK version=7");
+///
+/// FormatErrorLine:
+/// test.eq::<string>(format_error(&"BAD_CMD", &"unknown command"), "ERROR BAD_CMD unknown command");

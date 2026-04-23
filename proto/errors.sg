@@ -1,0 +1,25 @@
+pragma module;
+
+fn proto_error(code: uint, message: &string) -> Error {
+    return Error { message = message.__clone(), code = code };
+}
+
+fn bad_cmd(message: &string) -> Erring<Command, Error> {
+    return proto_error(PROTO_ERR_BAD_CMD, message);
+}
+
+fn usage_error(message: &string) -> Erring<Command, Error> {
+    return proto_error(PROTO_ERR_BAD_CMD, message);
+}
+
+fn unit_usage_error(message: &string) -> Erring<nothing, Error> {
+    return proto_error(PROTO_ERR_BAD_CMD, message);
+}
+
+fn string_usage_error(message: &string) -> Erring<string, Error> {
+    return proto_error(PROTO_ERR_BAD_CMD, message);
+}
+
+fn lease_usage_error(message: &string) -> Erring<LeaseArgs, Error> {
+    return proto_error(PROTO_ERR_BAD_CMD, message);
+}
