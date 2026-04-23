@@ -1,0 +1,25 @@
+pragma module;
+
+import stdlib/directives/test;
+
+/// test:
+/// ClientIdsIncrement:
+/// let mut next_id: uint = 1:uint;
+/// test.eq::<string>(next_client_id(&mut next_id), "client-1");
+/// test.eq::<string>(next_client_id(&mut next_id), "client-2");
+///
+/// TakeNextLineConsumesBuffer:
+/// let mut buffer: string = "PING\r\nGET key\n";
+/// let line1 = compare take_next_line(&mut buffer) { Some(v) => v; nothing => "missing"; };
+/// let line2 = compare take_next_line(&mut buffer) { Some(v) => v; nothing => "missing"; };
+/// let line3 = compare take_next_line(&mut buffer) { Some(v) => v; nothing => "none"; };
+/// test.eq::<string>(line1, "PING");
+/// test.eq::<string>(line2, "GET key");
+/// test.eq::<string>(line3, "none");
+/// test.eq::<string>(buffer, "");
+///
+/// ResponseForLineMapsParseErrors:
+/// let mut store: state.Store = state.new();
+/// test.eq::<string>(response_for_line(&mut store, &"client-1", &"PING"), "PONG");
+/// let bad = response_for_line(&mut store, &"client-1", &"BOOM");
+/// test.assert(bad.starts_with("ERROR BAD_CMD"));

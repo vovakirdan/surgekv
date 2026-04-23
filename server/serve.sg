@@ -1,0 +1,104 @@
+pragma module;
+
+fn default_read_cap() -> uint {
+    return 1024:uint;
+}
+
+fn print_listen_banner(port: uint) -> nothing {
+    print("surgekv listening on 127.0.0.1:" + (port to string));
+    return nothing;
+}
+
+pub async fn serve(port: uint) -> int {
+    let listen_res = net.listen("127.0.0.1", port);
+    compare listen_res {
+        Success(listener) => {
+            let mut store: state.Store = state.new();
+            let mut next_id: uint = 1:uint;
+            let read_cap: uint = default_read_cap();
+            print_listen_banner(port);
+
+            while true {
+                let accept_res = net.accept(&listener).await();
+                compare accept_res {
+                    Success(conn_res) => {
+                        compare conn_res {
+                            Success(conn) => {
+                                let client_id: string = next_client_id(&mut next_id);
+                                let mut buffer: string = "";
+
+                                while true {
+                                    compare take_next_line(&mut buffer) {
+                                        Some(line) => {
+                                            let response: string = response_for_line(&mut store, &client_id, &line);
+                                            let data: byte[] = line_bytes(response);
+                                            let write_res = net.write_all(&conn, data).await();
+                                            let ok: bool = compare write_res {
+                                                Success(net_write_res) => compare net_write_res {
+                                                    Success(_) => true;
+                                                    _ => false;
+                                                };
+                                                Cancelled() => false;
+                                            };
+                                            if !ok {
+                                                break;
+                                            }
+                                            continue;
+                                        }
+                                        nothing => {}
+                                    };
+
+                                    let read_res = net.read_some(&conn, read_cap).await();
+                                    compare read_res {
+                                        Success(net_read_res) => {
+                                            compare net_read_res {
+                                                Success(bytes) => {
+                                                    if bytes.__len() == 0:uint {
+                                                        break;
+                                                    }
+                                                    compare append_chunk(&mut buffer, &bytes) {
+                                                        Success(_) => {}
+                                                        err => {
+                                                            let response: string = proto.format_parse_error(&err);
+                                                            let data: byte[] = line_bytes(response);
+                                                            let _ = net.write_all(&conn, data).await();
+                                                            break;
+                                                        }
+                                                    };
+                                                }
+                                                _ => {
+                                                    break;
+                                                }
+                                            };
+                                        }
+                                        Cancelled() => {
+                                            break;
+                                        }
+                                    };
+                                }
+
+                                let _ = store.apply(&client_id, proto.Disconnect());
+                                let _ = net.close_conn(own conn);
+                            }
+                            err => {
+                                print("accept error code=" + (err.code to string));
+                                let _ = net.close_listener(own listener);
+                                return 1;
+                            }
+                        };
+                    }
+                    Cancelled() => {
+                        print("accept cancelled");
+                        let _ = net.close_listener(own listener);
+                        return 1;
+                    }
+                };
+            }
+        }
+        err => {
+            print("listen error code=" + (err.code to string));
+            return 1;
+        }
+    };
+    return 1;
+}

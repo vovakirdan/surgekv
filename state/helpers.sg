@@ -1,0 +1,79 @@
+pragma module;
+
+fn owner_matches(entry: &Entry, client_id: &string) -> bool {
+    return compare entry.owner {
+        Some(owner_id) => owner_id == *client_id;
+        nothing => false;
+    };
+}
+
+fn has_owner(entry: &Entry) -> bool {
+    return entry.owner.is_some();
+}
+
+fn has_borrowers(entry: &Entry) -> bool {
+    return entry.borrowers.__len() != 0:uint;
+}
+
+fn borrower_contains(entry: &Entry, client_id: &string) -> bool {
+    return entry.borrowers.contains(client_id);
+}
+
+fn add_borrower(entry: &mut Entry, client_id: &string) -> nothing {
+    if !entry.borrowers.contains(client_id) {
+        entry.borrowers.push(client_id.__clone());
+    }
+    return nothing;
+}
+
+fn remove_borrower(entry: &mut Entry, client_id: &string) -> bool {
+    if !entry.borrowers.contains(client_id) {
+        return false;
+    }
+
+    let mut next: string[] = [];
+    let length: int = entry.borrowers.__len() to int;
+    if length > 0 {
+        next.reserve(entry.borrowers.__len());
+    }
+
+    let mut removed: bool = false;
+    let mut i: int = 0;
+    while i < length {
+        let borrower_ref = entry.borrowers[i];
+        if borrower_ref == *client_id {
+            removed = true;
+        } else {
+            next.push(clone(borrower_ref));
+        }
+        i = i + 1;
+    }
+
+    entry.borrowers = next;
+    return removed;
+}
+
+fn count_holds(store: &Store, client_id: &string) -> (uint, uint) {
+    let keys: string[] = store.entries.keys();
+    let mut owned: uint = 0:uint;
+    let mut borrowed: uint = 0:uint;
+    let mut i: int = 0;
+    let length: int = keys.__len() to int;
+    while i < length {
+        let key_ref = keys[i];
+        compare store.entries.get_ref(key_ref) {
+            Some(entry) => {
+                if owner_matches(entry, client_id) {
+                    owned = owned + 1:uint;
+                }
+                if borrower_contains(entry, client_id) {
+                    borrowed = borrowed + 1:uint;
+                }
+                0:int;
+            }
+            nothing => 0:int;
+        };
+        i = i + 1;
+    }
+    return (owned, borrowed);
+}

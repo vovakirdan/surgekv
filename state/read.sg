@@ -1,0 +1,36 @@
+pragma module;
+
+fn apply_ping() -> string {
+    return "PONG";
+}
+
+fn apply_whoami(store: &Store, client_id: &string) -> string {
+    let (owned, borrowed) = count_holds(store, client_id);
+    return whoami_line(client_id, owned, borrowed);
+}
+
+fn apply_get(store: &Store, key: &string) -> string {
+    compare store.entries.get_ref(key) {
+        Some(entry) => {
+            return value_line(entry.value);
+        }
+        nothing => {
+            return not_found_line();
+        }
+    };
+}
+
+fn apply_stat(store: &Store, key: &string) -> string {
+    compare store.entries.get_ref(key) {
+        Some(entry) => {
+            return stat_line(entry);
+        }
+        nothing => {
+            return not_found_line();
+        }
+    };
+}
+
+fn apply_keys() -> string {
+    return error_line(&"BAD_CMD", &"KEYS is not implemented yet");
+}

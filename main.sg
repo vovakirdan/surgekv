@@ -1,8 +1,12 @@
 pragma module;
 
-import proto as proto;
+import server as server;
 
-@entrypoint
-fn main() {
-    let _ = proto.parse_line(&"PING");
+@entrypoint("argv")
+fn main(port: uint) -> int {
+    let serve_res = server.serve(port).await();
+    return compare serve_res {
+        Success(code) => code;
+        Cancelled() => 1;
+    };
 }

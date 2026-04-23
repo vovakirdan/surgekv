@@ -1,0 +1,40 @@
+pragma module;
+
+import stdlib/directives/test;
+
+/// test:
+/// NewGetAndStat:
+/// let mut store: Store = new();
+/// test.eq::<string>(store.apply(&"client-a", proto.New("session:42", "{\"user\":\"alice\"}")), "OK version=1");
+/// test.eq::<string>(store.apply(&"client-a", proto.Get("session:42")), "VALUE {\"user\":\"alice\"}");
+/// test.eq::<string>(store.apply(&"client-a", proto.Stat("session:42")), "STAT owner=none borrowers=0 ttl=none version=1 sealed=false");
+///
+/// OwnBlocksOtherWriter:
+/// let mut store: Store = new();
+/// let _ = store.apply(&"client-a", proto.New("k", "1"));
+/// test.eq::<string>(store.apply(&"client-a", proto.Own("k", Some(30:uint))), "OK ttl=30");
+/// test.eq::<string>(store.apply(&"client-b", proto.Set("k", "2")), "ERROR LOCKED key is locked");
+///
+/// BorrowAndWhoAmI:
+/// let mut store: Store = new();
+/// let _ = store.apply(&"client-a", proto.New("k", "1"));
+/// test.eq::<string>(store.apply(&"client-b", proto.Borrow("k", nothing)), "OK");
+/// test.eq::<string>(store.apply(&"client-b", proto.WhoAmI()), "CLIENT id=client-b owned=0 borrowed=1");
+///
+/// SealAndVersionMismatch:
+/// let mut store: Store = new();
+/// let _ = store.apply(&"client-a", proto.New("k", "1"));
+/// test.eq::<string>(store.apply(&"client-a", proto.SetIf("k", "2", 7:uint)), "ERROR VERSION version mismatch: expected 7, got 1");
+/// let _ = store.apply(&"client-a", proto.Own("k", nothing));
+/// test.eq::<string>(store.apply(&"client-a", proto.Seal("k")), "OK");
+/// test.eq::<string>(store.apply(&"client-a", proto.Set("k", "3")), "ERROR SEALED key is sealed");
+///
+/// DisconnectClearsHolds:
+/// let mut store: Store = new();
+/// let _ = store.apply(&"client-a", proto.New("k", "1"));
+/// let _ = store.apply(&"client-a", proto.Own("k", nothing));
+/// let _ = store.apply(&"client-b", proto.New("r", "2"));
+/// let _ = store.apply(&"client-a", proto.Borrow("r", nothing));
+/// let _ = store.apply(&"client-a", proto.Disconnect());
+/// test.eq::<string>(store.apply(&"client-b", proto.WhoAmI()), "CLIENT id=client-b owned=0 borrowed=0");
+/// test.eq::<string>(store.apply(&"client-b", proto.Set("k", "9")), "OK version=2");

@@ -1,0 +1,83 @@
+pragma module;
+
+fn ok_line(version: uint?, ttl: uint?) -> string {
+    return proto.format_ok(version, ttl);
+}
+
+fn ok_plain() -> string {
+    let version: uint? = nothing;
+    let ttl: uint? = nothing;
+    return ok_line(version, ttl);
+}
+
+fn ok_version(version: uint) -> string {
+    let ttl: uint? = nothing;
+    return ok_line(Some(version), ttl);
+}
+
+fn ok_ttl(ttl: uint?) -> string {
+    let version: uint? = nothing;
+    return ok_line(version, ttl);
+}
+
+fn value_line(value: &string) -> string {
+    return proto.format_value(value);
+}
+
+fn error_line(code: &string, message: &string) -> string {
+    return proto.format_error(code, message);
+}
+
+fn not_found_line() -> string {
+    return error_line(&"NOT_FOUND", &"key not found");
+}
+
+fn exists_line() -> string {
+    return error_line(&"EXISTS", &"key already exists");
+}
+
+fn locked_line() -> string {
+    return error_line(&"LOCKED", &"key is locked");
+}
+
+fn conflict_line() -> string {
+    return error_line(&"CONFLICT", &"key is already held");
+}
+
+fn owned_line() -> string {
+    return error_line(&"OWNED", &"key is owned");
+}
+
+fn sealed_line() -> string {
+    return error_line(&"SEALED", &"key is sealed");
+}
+
+fn not_holder_line() -> string {
+    return error_line(&"NOT_HOLDER", &"client does not hold key");
+}
+
+fn version_line(expected: uint, actual: uint) -> string {
+    let message: string = "version mismatch: expected " + (expected to string) + ", got " + (actual to string);
+    return error_line(&"VERSION", &message);
+}
+
+fn whoami_line(client_id: &string, owned: uint, borrowed: uint) -> string {
+    return "CLIENT id=" + *client_id + " owned=" + (owned to string) + " borrowed=" + (borrowed to string);
+}
+
+fn stat_line(entry: &Entry) -> string {
+    let owner_text: string = compare entry.owner {
+        Some(owner_id) => owner_id.__clone();
+        nothing => "none";
+    };
+    let ttl_text: string = compare entry.lease_ttl {
+        Some(ttl) => ttl to string;
+        nothing => "none";
+    };
+    let borrowers: string = entry.borrowers.__len() to string;
+    return "STAT owner=" + owner_text
+        + " borrowers=" + borrowers
+        + " ttl=" + ttl_text
+        + " version=" + (entry.version to string)
+        + " sealed=" + (entry.sealed to string);
+}

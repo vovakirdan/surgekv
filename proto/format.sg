@@ -26,3 +26,10 @@ pub fn format_value(json_text: &string) -> string {
 pub fn format_error(code: &string, message: &string) -> string {
     return "ERROR " + *code + " " + *message;
 }
+
+pub fn format_parse_error(err: &Error) -> string {
+    if err.code == PROTO_ERR_INVALID_JSON {
+        return format_error(&"INVALID_JSON", err.message);
+    }
+    return format_error(&"BAD_CMD", err.message);
+}

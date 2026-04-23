@@ -1,0 +1,170 @@
+pragma module;
+
+fn set_ttl(entry: &mut Entry, ttl: uint?) -> uint? {
+    compare ttl {
+        Some(value) => {
+            entry.lease_ttl = Some(value);
+            return Some(value);
+        }
+        nothing => {
+            let stored: uint? = nothing;
+            entry.lease_ttl = stored;
+            let out: uint? = nothing;
+            return out;
+        }
+    };
+}
+
+fn apply_own(store: &mut Store, client_id: &string, key: &string, ttl: uint?) -> string {
+    compare store.entries.get_mut(key) {
+        Some(entry) => {
+            let sealed: bool = entry.sealed;
+            let borrower_count: uint = entry.borrowers.__len();
+            if sealed {
+                return sealed_line();
+            }
+            let mut owner_present: bool = false;
+            let owned_by_client: bool = compare entry.owner {
+                Some(owner_id) => {
+                    owner_present = true;
+                    ret owner_id == *client_id;
+                }
+                nothing => false;
+            };
+            if owned_by_client {
+                let ttl_value: uint? = set_ttl(entry, ttl);
+                return ok_ttl(ttl_value);
+            }
+            if owner_present {
+                return conflict_line();
+            }
+            if borrower_count != 0:uint {
+                return conflict_line();
+            }
+            entry.owner = Some(client_id.__clone());
+            let ttl_value: uint? = set_ttl(entry, ttl);
+            return ok_ttl(ttl_value);
+        }
+        nothing => {
+            return not_found_line();
+        }
+    };
+}
+
+fn apply_borrow(store: &mut Store, client_id: &string, key: &string, ttl: uint?) -> string {
+    compare store.entries.get_mut(key) {
+        Some(entry) => {
+            let owner_present: bool = compare entry.owner {
+                Some(_) => true;
+                nothing => false;
+            };
+            if owner_present {
+                return owned_line();
+            }
+            add_borrower(entry, client_id);
+            let ttl_value: uint? = set_ttl(entry, ttl);
+            return ok_ttl(ttl_value);
+        }
+        nothing => {
+            return not_found_line();
+        }
+    };
+}
+
+fn apply_release(store: &mut Store, client_id: &string, key: &string) -> string {
+    compare store.entries.get_mut(key) {
+        Some(entry) => {
+            let owned_by_client: bool = compare entry.owner {
+                Some(owner_id) => owner_id == *client_id;
+                nothing => false;
+            };
+            if owned_by_client {
+                let cleared_owner: string? = nothing;
+                let ttl: uint? = nothing;
+                entry.owner = cleared_owner;
+                entry.lease_ttl = ttl;
+                return ok_plain();
+            }
+            let removed: bool = remove_borrower(entry, client_id);
+            if removed {
+                if entry.borrowers.__len() == 0:uint {
+                    let ttl: uint? = nothing;
+                    entry.lease_ttl = ttl;
+                }
+                return ok_plain();
+            }
+            return not_holder_line();
+        }
+        nothing => {
+            return not_found_line();
+        }
+    };
+}
+
+fn apply_seal(store: &mut Store, client_id: &string, key: &string) -> string {
+    compare store.entries.get_mut(key) {
+        Some(entry) => {
+            let owned_by_client: bool = compare entry.owner {
+                Some(owner_id) => owner_id == *client_id;
+                nothing => false;
+            };
+            let sealed: bool = entry.sealed;
+            if !owned_by_client {
+                if sealed {
+                    return sealed_line();
+                }
+                return not_holder_line();
+            }
+            entry.sealed = true;
+            let cleared_owner: string? = nothing;
+            let ttl: uint? = nothing;
+            entry.owner = cleared_owner;
+            entry.borrowers = [];
+            entry.lease_ttl = ttl;
+            return ok_plain();
+        }
+        nothing => {
+            return not_found_line();
+        }
+    };
+}
+
+fn apply_disconnect(store: &mut Store, client_id: &string) -> string {
+    let keys: string[] = store.entries.keys();
+    let mut i: int = 0;
+    let length: int = keys.__len() to int;
+    while i < length {
+        let key_ref = keys[i];
+        compare store.entries.get_mut(key_ref) {
+            Some(entry) => {
+                let owned_by_client: bool = compare entry.owner {
+                    Some(owner_id) => owner_id == *client_id;
+                    nothing => false;
+                };
+                if owned_by_client {
+                    let cleared_owner: string? = nothing;
+                    let ttl: uint? = nothing;
+                    entry.owner = cleared_owner;
+                    entry.lease_ttl = ttl;
+                }
+                let removed: bool = remove_borrower(entry, client_id);
+                if removed {
+                    if entry.borrowers.__len() == 0:uint {
+                        let owner_missing: bool = compare entry.owner {
+                            Some(_) => false;
+                            nothing => true;
+                        };
+                        if owner_missing {
+                            let ttl: uint? = nothing;
+                            entry.lease_ttl = ttl;
+                        }
+                    }
+                }
+                0:int;
+            }
+            nothing => 0:int;
+        };
+        i = i + 1;
+    }
+    return ok_plain();
+}

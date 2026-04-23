@@ -1,0 +1,77 @@
+pragma module;
+
+fn apply_new(store: &mut Store, key: string, value: string) -> string {
+    if store.entries.contains(&key) {
+        return exists_line();
+    }
+    let _ = store.entries.insert(key, entry_new(value));
+    return ok_version(1:uint);
+}
+
+fn apply_set(store: &mut Store, client_id: &string, key: &string, value: string) -> string {
+    compare store.entries.get_mut(key) {
+        Some(entry) => {
+            if entry.sealed {
+                return sealed_line();
+            }
+            if has_borrowers(entry) {
+                return locked_line();
+            }
+            if has_owner(entry) && !owner_matches(entry, client_id) {
+                return locked_line();
+            }
+            entry.value = value;
+            entry.version = entry.version + 1:uint;
+            return ok_version(entry.version);
+        }
+        nothing => {
+            return not_found_line();
+        }
+    };
+}
+
+fn apply_set_if(store: &mut Store, client_id: &string, key: &string, value: string, expected: uint) -> string {
+    compare store.entries.get_mut(key) {
+        Some(entry) => {
+            if entry.sealed {
+                return sealed_line();
+            }
+            if has_borrowers(entry) {
+                return locked_line();
+            }
+            if has_owner(entry) && !owner_matches(entry, client_id) {
+                return locked_line();
+            }
+            if entry.version != expected {
+                return version_line(expected, entry.version);
+            }
+            entry.value = value;
+            entry.version = entry.version + 1:uint;
+            return ok_version(entry.version);
+        }
+        nothing => {
+            return not_found_line();
+        }
+    };
+}
+
+fn apply_del(store: &mut Store, client_id: &string, key: &string) -> string {
+    compare store.entries.get_ref(key) {
+        Some(entry) => {
+            if entry.sealed {
+                return sealed_line();
+            }
+            if has_borrowers(entry) {
+                return locked_line();
+            }
+            if has_owner(entry) && !owner_matches(entry, client_id) {
+                return locked_line();
+            }
+            let _ = store.entries.remove(key);
+            return ok_plain();
+        }
+        nothing => {
+            return not_found_line();
+        }
+    };
+}

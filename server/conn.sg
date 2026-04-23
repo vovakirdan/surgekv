@@ -1,0 +1,19 @@
+pragma module;
+
+fn append_string_bytes(out: &mut byte[], s: string) -> nothing {
+    let view = s.bytes();
+    let length: int = view.__len() to int;
+    let mut i: int = 0;
+    while i < length {
+        out.push(view[i]);
+        i = i + 1;
+    }
+    return nothing;
+}
+
+fn line_bytes(line: string) -> byte[] {
+    let mut out: byte[] = [];
+    append_string_bytes(&mut out, line);
+    out.push(10:byte);
+    return out;
+}

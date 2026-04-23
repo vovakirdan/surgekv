@@ -1,0 +1,8 @@
+pragma module;
+
+fn next_client_id(counter: &mut uint) -> string {
+    let current: uint = *counter;
+    let out: string = "client-" + (current to string);
+    *counter = current + 1:uint;
+    return out;
+}
