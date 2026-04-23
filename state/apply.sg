@@ -15,7 +15,7 @@ extern<Store> {
             proto.Release(key) => apply_release(self, client_id, &key);
             proto.Seal(key) => apply_seal(self, client_id, &key);
             proto.Stat(key) => apply_stat(self, &key);
-            proto.Keys(_) => apply_keys();
+            proto.Keys(pattern) => apply_keys(self, pattern);
             proto.Disconnect() => apply_disconnect(self, client_id);
         };
     }

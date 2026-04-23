@@ -24,6 +24,18 @@ fn value_line(value: &string) -> string {
     return proto.format_value(value);
 }
 
+fn list_line(keys: &string[]) -> string {
+    let mut out: string = "LIST";
+    let length: int = keys.__len() to int;
+    let mut i: int = 0;
+    while i < length {
+        out = out + "\n" + clone(keys[i]);
+        i = i + 1;
+    }
+    out = out + "\nEND";
+    return out;
+}
+
 fn error_line(code: &string, message: &string) -> string {
     return proto.format_error(code, message);
 }

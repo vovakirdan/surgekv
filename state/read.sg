@@ -1,5 +1,172 @@
 pragma module;
 
+fn string_lt(a: &string, b: &string) -> bool {
+    let la: int = a.__len() to int;
+    let lb: int = b.__len() to int;
+    let mut i: int = 0;
+    let mut min: int = la;
+    if lb < min {
+        min = lb;
+    }
+    while i < min {
+        let ac: uint32 = a[i];
+        let bc: uint32 = b[i];
+        if ac < bc {
+            return true;
+        }
+        if ac > bc {
+            return false;
+        }
+        i = i + 1;
+    }
+    return la < lb;
+}
+
+fn sort_strings(strings: &mut string[]) -> nothing {
+    let n: int = strings.__len() to int;
+    if n <= 1 {
+        return nothing;
+    }
+    let mut i: int = 0;
+    while i < n {
+        let mut j: int = 0;
+        while j + 1 < n - i {
+            let left: string = clone(strings[j]);
+            let right: string = clone(strings[j + 1]);
+            if string_lt(&right, &left) {
+                strings[j] = right;
+                strings[j + 1] = left;
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    return nothing;
+}
+
+fn find_from(hay: &string, needle: &string, start: int) -> int {
+    let hay_len: int = hay.__len() to int;
+    let needle_len: int = needle.__len() to int;
+    let mut from: int = start;
+
+    if needle_len == 0 {
+        if from < 0 {
+            return 0;
+        }
+        if from > hay_len {
+            return hay_len;
+        }
+        return from;
+    }
+    if from < 0 {
+        from = 0;
+    }
+    if needle_len > hay_len {
+        return -1;
+    }
+    let last: int = hay_len - needle_len;
+    if from > last {
+        return -1;
+    }
+
+    let mut i: int = from;
+    while i <= last {
+        let mut j: int = 0;
+        let mut ok: bool = true;
+        while j < needle_len {
+            if hay[i + j] != needle[j] {
+                ok = false;
+                break;
+            }
+            j = j + 1;
+        }
+        if ok {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn glob_matches(pattern: &string, key: &string) -> bool {
+    if !pattern.contains("*") {
+        return *pattern == *key;
+    }
+
+    let starts_with_star: bool = pattern.starts_with("*");
+    let ends_with_star: bool = pattern.ends_with("*");
+    let parts: string[] = pattern.split("*");
+    let part_count: int = parts.__len() to int;
+    let key_len: int = key.__len() to int;
+    let mut cursor: int = 0;
+    let mut i: int = 0;
+
+    while i < part_count {
+        let part: string = clone(parts[i]);
+        let part_len: int = part.__len() to int;
+        if part_len == 0 {
+            i = i + 1;
+            continue;
+        }
+        if i == 0 && !starts_with_star {
+            if !key.starts_with(part.__clone()) {
+                return false;
+            }
+            cursor = part_len;
+            i = i + 1;
+            continue;
+        }
+        if i == part_count - 1 && !ends_with_star {
+            let idx: int = find_from(key, &part, cursor);
+            if idx < 0 {
+                return false;
+            }
+            if idx + part_len != key_len {
+                return false;
+            }
+            cursor = idx + part_len;
+            i = i + 1;
+            continue;
+        }
+        let idx: int = find_from(key, &part, cursor);
+        if idx < 0 {
+            return false;
+        }
+        cursor = idx + part_len;
+        i = i + 1;
+    }
+    return true;
+}
+
+fn apply_keys(store: &Store, pattern: string?) -> string {
+    let mut keys: string[] = store.entries.keys();
+    let mut filtered: string[] = [];
+    let mut use_pattern: bool = false;
+    let mut pattern_text: string = "";
+
+    compare pattern {
+        Some(glob) => {
+            use_pattern = true;
+            pattern_text = glob;
+            0:int;
+        }
+        nothing => 0:int;
+    };
+
+    let length: int = keys.__len() to int;
+    let mut i: int = 0;
+    while i < length {
+        let key: string = clone(keys[i]);
+        if !use_pattern || glob_matches(&pattern_text, &key) {
+            filtered.push(key);
+        }
+        i = i + 1;
+    }
+
+    sort_strings(&mut filtered);
+    return list_line(&filtered);
+}
+
 fn apply_ping() -> string {
     return "PONG";
 }
@@ -29,8 +196,4 @@ fn apply_stat(store: &Store, key: &string) -> string {
             return not_found_line();
         }
     };
-}
-
-fn apply_keys() -> string {
-    return error_line(&"BAD_CMD", &"KEYS is not implemented yet");
 }

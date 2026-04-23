@@ -19,22 +19,35 @@ Implemented pieces:
 The following commands are implemented and usable:
 
 - `PING`
+  Health check. Returns `PONG` and is useful to verify that the server is reachable and the TCP session is alive.
 - `WHOAMI`
+  Returns the server-assigned client id together with the current number of owned and borrowed keys for that connection.
 - `NEW <key> <json>`
+  Creates a new key with the provided JSON value. Fails with `EXISTS` if the key already exists.
 - `GET <key>`
+  Reads the current value of a key. Returns `VALUE <json>` if the key exists, otherwise `NOT_FOUND`.
 - `SET <key> <json>`
+  Updates the value of an existing key. Works only when the key is free or owned by the current client.
 - `SET <key> <json> IF <version>`
+  Conditional update with optimistic concurrency. The write succeeds only if the current entry version matches the provided version.
 - `DEL <key>`
+  Deletes a key. Works only when the key is free or owned by the current client.
 - `OWN <key> [TTL <seconds>]`
+  Acquires an exclusive write lease for a key. While the key is owned, other clients cannot write or acquire ownership.
 - `BORROW <key> [TTL <seconds>]`
+  Registers the current client as a borrower of the key. This is the shared read side of the ownership model.
 - `RELEASE <key>`
+  Releases ownership or a borrow held by the current client. This is how clients explicitly drop a lease before disconnecting.
 - `SEAL <key>`
+  Makes a key permanently immutable. After sealing, no further writes are allowed.
 - `STAT <key>`
+  Returns metadata for a key: owner presence, borrower count, stored TTL, current version, and sealed flag.
+- `KEYS [pattern]`
+  Lists known keys. Without a pattern it returns the full key set; with a pattern it filters keys using simple `*` glob matching and returns a deterministic sorted list.
 
 Special handling:
 
-- `Disconnect` exists as an internal command and is triggered when a client connection closes.
-- `KEYS` is parsed but not implemented yet; the current state layer returns `BAD_CMD`.
+- `Disconnect` exists as an internal command and is triggered when a client connection closes. It clears ownership and borrow state associated with that client.
 
 ## Implemented Semantics
 
@@ -70,6 +83,7 @@ NEW k 1
 GET k
 OWN k TTL 30
 WHOAMI
+KEYS k*
 ```
 
 Expected responses:
@@ -80,6 +94,9 @@ OK version=1
 VALUE 1
 OK ttl=30
 CLIENT id=client-1 owned=1 borrowed=0
+LIST
+k
+END
 ```
 
 ## Verification
@@ -110,7 +127,7 @@ The current server is intentionally small:
 - no real TTL expiration yet
 - no authentication
 - no persistence
-- no `KEYS` implementation
+- `KEYS` currently supports `*` glob matching only
 
 ## Upstream Surge Issues
 
@@ -126,8 +143,8 @@ These are tracked as upstream issues in the main Surge repository and should be 
 
 The most reasonable next steps for `surgekv` are:
 
-1. commit the current transport slice
-2. keep the current server sequential until the upstream issues are fixed or clearly understood
-3. implement `KEYS`
-4. add TTL expiration
-5. move to shard/state-manager task architecture
+1. keep the current server sequential until the upstream issues are fixed or clearly understood
+2. add TTL expiration
+3. move to shard/state-manager task architecture
+4. introduce listener/client/state-manager task separation once the runtime path is stable
+5. expand pattern support beyond simple `*` matching only if it is still worth the complexity

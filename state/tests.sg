@@ -38,3 +38,17 @@ import stdlib/directives/test;
 /// let _ = store.apply(&"client-a", proto.Disconnect());
 /// test.eq::<string>(store.apply(&"client-b", proto.WhoAmI()), "CLIENT id=client-b owned=0 borrowed=0");
 /// test.eq::<string>(store.apply(&"client-b", proto.Set("k", "9")), "OK version=2");
+///
+/// KeysAllSorted:
+/// let mut store: Store = new();
+/// let _ = store.apply(&"client-a", proto.New("user:2", "2"));
+/// let _ = store.apply(&"client-a", proto.New("post:1", "1"));
+/// let _ = store.apply(&"client-a", proto.New("user:1", "1"));
+/// test.eq::<string>(store.apply(&"client-a", proto.Keys(nothing)), "LIST\npost:1\nuser:1\nuser:2\nEND");
+///
+/// KeysPatternGlob:
+/// let mut store: Store = new();
+/// let _ = store.apply(&"client-a", proto.New("user:1", "1"));
+/// let _ = store.apply(&"client-a", proto.New("user:2", "2"));
+/// let _ = store.apply(&"client-a", proto.New("post:1", "3"));
+/// test.eq::<string>(store.apply(&"client-a", proto.Keys(Some("user:*"))), "LIST\nuser:1\nuser:2\nEND");
