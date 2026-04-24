@@ -58,7 +58,8 @@ The current engine already enforces the core ownership model:
 - sealing makes a key immutable
 - conditional writes use `version`
 - disconnect cleanup releases ownership and borrowed state for that client
-- lease TTL values are stored and returned in responses
+- lease TTL values are stored, returned in responses, and lazily expired on later commands
+- TTL deadlines use monotonic millisecond timestamps stored as `int64`
 
 ## How To Run
 
@@ -66,7 +67,7 @@ Start the server:
 
 ```bash
 cd surgekv
-go run ../cmd/surge run . -- 7400
+surge run . -- 7400
 ```
 
 Connect from another terminal:
@@ -105,14 +106,15 @@ The current slice has been checked with:
 
 ```bash
 cd surgekv
-go run ../cmd/surge fmt .
-go run ../cmd/surge diag .
-go run ../cmd/surge build .
+surge fmt --check .
+surge diag .
+surge diag --directives=run .
+surge build .
 ```
 
-It has also been smoke-tested end-to-end on both backends:
+The server should also be smoke-tested end-to-end in an environment that permits loopback TCP listeners:
 
-- `go run ../cmd/surge run . -- <port>`
+- `surge run . -- <port>`
 - `./target/debug/surgekv <port>`
 
 ## Known Limitations
@@ -124,27 +126,28 @@ The current server is intentionally small:
 - sequential connection handling
 - no shard manager tasks yet
 - no expiry worker yet
-- no real TTL expiration yet
+- TTL expiration is currently lazy, not background-driven
 - no authentication
 - no persistence
 - `KEYS` currently supports `*` glob matching only
 
 ## Upstream Surge Issues
 
-The current implementation had to work around several language/runtime bugs:
+The previously blocking Surge issues are closed in the current compiler:
 
-- `@entrypoint("argv")` with a default argument passes sema but fails during `build`
-- borrowed `TcpConn` values routed through async helpers can crash the VM and native binary
-- some accepted patterns around mutable refs from `Map.get_mut(...)` can still fail at runtime with move-related VM panics
+- `#72`: `@entrypoint("argv")` default parameter build failure
+- `#73`: borrowed `TcpConn` through async helper VM crash
+- `#74`: `Map.get_mut(...)` mutable-ref VM move panic
+- `#80`: array field access through `&mut` struct backend failures
+- `#82`: `stdlib/time.Duration` conversion intrinsic lowering
 
-These are tracked as upstream issues in the main Surge repository and should be removed from this section once fixed.
+There is no current compiler blocker for the implemented sequential server slice.
 
 ## Recommended Next Work
 
 The most reasonable next steps for `surgekv` are:
 
-1. keep the current server sequential until the upstream issues are fixed or clearly understood
-2. add TTL expiration
-3. move to shard/state-manager task architecture
-4. introduce listener/client/state-manager task separation once the runtime path is stable
-5. expand pattern support beyond simple `*` matching only if it is still worth the complexity
+1. move lazy TTL expiration to a real expiry worker
+2. move to shard/state-manager task architecture
+3. introduce listener/client/state-manager task separation
+4. expand pattern support beyond simple `*` matching only if it is still worth the complexity

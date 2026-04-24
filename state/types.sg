@@ -6,26 +6,34 @@ pub type Entry = {
     borrowers: string[],
     sealed: bool,
     lease_ttl: uint?,
+    lease_deadline_ms: int64?,
     version: uint,
 };
 
 pub type Store = {
     entries: Map<string, Entry>,
+    test_now_ms: int64?,
 };
 
 pub fn new() -> Store {
-    return Store { entries = Map::<string, Entry>.new() };
+    let test_now_ms: int64? = nothing;
+    return Store {
+        entries = Map::<string, Entry>.new(),
+        test_now_ms = test_now_ms
+    };
 }
 
 fn entry_new(value: string) -> Entry {
     let owner: string? = nothing;
     let ttl: uint? = nothing;
+    let deadline_ms: int64? = nothing;
     return Entry {
         value = value,
         owner = owner,
         borrowers = [],
         sealed = false,
         lease_ttl = ttl,
+        lease_deadline_ms = deadline_ms,
         version = 1:uint
     };
 }

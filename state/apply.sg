@@ -2,6 +2,8 @@ pragma module;
 
 extern<Store> {
     pub fn apply(self: &mut Store, client_id: &string, cmd: proto.Command) -> string {
+        let now_ms: int64 = current_now_ms(self);
+        prune_expired(self, now_ms);
         return compare cmd {
             proto.Ping() => apply_ping();
             proto.WhoAmI() => apply_whoami(self, client_id);
@@ -10,8 +12,8 @@ extern<Store> {
             proto.Set(key, value) => apply_set(self, client_id, &key, value);
             proto.SetIf(key, value, expected) => apply_set_if(self, client_id, &key, value, expected);
             proto.Del(key) => apply_del(self, client_id, &key);
-            proto.Own(key, ttl) => apply_own(self, client_id, &key, ttl);
-            proto.Borrow(key, ttl) => apply_borrow(self, client_id, &key, ttl);
+            proto.Own(key, ttl) => apply_own(self, client_id, &key, ttl, now_ms);
+            proto.Borrow(key, ttl) => apply_borrow(self, client_id, &key, ttl, now_ms);
             proto.Release(key) => apply_release(self, client_id, &key);
             proto.Seal(key) => apply_seal(self, client_id, &key);
             proto.Stat(key) => apply_stat(self, &key);

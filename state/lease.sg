@@ -1,21 +1,26 @@
 pragma module;
 
-fn set_ttl(entry: &mut Entry, ttl: uint?) -> uint? {
+fn set_ttl(entry: &mut Entry, ttl: uint?, now_ms: int64) -> uint? {
     compare ttl {
         Some(value) => {
+            let ttl_ms: int64 = (value to int64) * 1000:int64;
+            let deadline_ms: int64 = now_ms + ttl_ms;
             entry.lease_ttl = Some(value);
+            entry.lease_deadline_ms = Some(deadline_ms);
             return Some(value);
         }
         nothing => {
             let stored: uint? = nothing;
+            let deadline_ms: int64? = nothing;
             entry.lease_ttl = stored;
+            entry.lease_deadline_ms = deadline_ms;
             let out: uint? = nothing;
             return out;
         }
     };
 }
 
-fn apply_own(store: &mut Store, client_id: &string, key: &string, ttl: uint?) -> string {
+fn apply_own(store: &mut Store, client_id: &string, key: &string, ttl: uint?, now_ms: int64) -> string {
     compare store.entries.get_mut(key) {
         Some(entry) => {
             let sealed: bool = entry.sealed;
@@ -32,7 +37,7 @@ fn apply_own(store: &mut Store, client_id: &string, key: &string, ttl: uint?) ->
                 nothing => false;
             };
             if owned_by_client {
-                let ttl_value: uint? = set_ttl(entry, ttl);
+                let ttl_value: uint? = set_ttl(entry, ttl, now_ms);
                 return ok_ttl(ttl_value);
             }
             if owner_present {
@@ -42,7 +47,7 @@ fn apply_own(store: &mut Store, client_id: &string, key: &string, ttl: uint?) ->
                 return conflict_line();
             }
             entry.owner = Some(client_id.__clone());
-            let ttl_value: uint? = set_ttl(entry, ttl);
+            let ttl_value: uint? = set_ttl(entry, ttl, now_ms);
             return ok_ttl(ttl_value);
         }
         nothing => {
@@ -51,7 +56,7 @@ fn apply_own(store: &mut Store, client_id: &string, key: &string, ttl: uint?) ->
     };
 }
 
-fn apply_borrow(store: &mut Store, client_id: &string, key: &string, ttl: uint?) -> string {
+fn apply_borrow(store: &mut Store, client_id: &string, key: &string, ttl: uint?, now_ms: int64) -> string {
     compare store.entries.get_mut(key) {
         Some(entry) => {
             let owner_present: bool = compare entry.owner {
@@ -62,7 +67,7 @@ fn apply_borrow(store: &mut Store, client_id: &string, key: &string, ttl: uint?)
                 return owned_line();
             }
             add_borrower(entry, client_id);
-            let ttl_value: uint? = set_ttl(entry, ttl);
+            let ttl_value: uint? = set_ttl(entry, ttl, now_ms);
             return ok_ttl(ttl_value);
         }
         nothing => {
@@ -79,17 +84,16 @@ fn apply_release(store: &mut Store, client_id: &string, key: &string) -> string 
                 nothing => false;
             };
             if owned_by_client {
-                let cleared_owner: string? = nothing;
-                let ttl: uint? = nothing;
-                entry.owner = cleared_owner;
-                entry.lease_ttl = ttl;
+                clear_lease(entry);
                 return ok_plain();
             }
             let removed: bool = remove_borrower(entry, client_id);
             if removed {
                 if entry.borrowers.__len() == 0:uint {
                     let ttl: uint? = nothing;
+                    let deadline_ms: int64? = nothing;
                     entry.lease_ttl = ttl;
+                    entry.lease_deadline_ms = deadline_ms;
                 }
                 return ok_plain();
             }
@@ -116,11 +120,7 @@ fn apply_seal(store: &mut Store, client_id: &string, key: &string) -> string {
                 return not_holder_line();
             }
             entry.sealed = true;
-            let cleared_owner: string? = nothing;
-            let ttl: uint? = nothing;
-            entry.owner = cleared_owner;
-            entry.borrowers = [];
-            entry.lease_ttl = ttl;
+            clear_lease(entry);
             return ok_plain();
         }
         nothing => {
@@ -142,10 +142,7 @@ fn apply_disconnect(store: &mut Store, client_id: &string) -> string {
                     nothing => false;
                 };
                 if owned_by_client {
-                    let cleared_owner: string? = nothing;
-                    let ttl: uint? = nothing;
-                    entry.owner = cleared_owner;
-                    entry.lease_ttl = ttl;
+                    clear_lease(entry);
                 }
                 let removed: bool = remove_borrower(entry, client_id);
                 if removed {
@@ -156,7 +153,9 @@ fn apply_disconnect(store: &mut Store, client_id: &string) -> string {
                         };
                         if owner_missing {
                             let ttl: uint? = nothing;
+                            let deadline_ms: int64? = nothing;
                             entry.lease_ttl = ttl;
+                            entry.lease_deadline_ms = deadline_ms;
                         }
                     }
                 }

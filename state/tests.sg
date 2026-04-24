@@ -52,3 +52,27 @@ import stdlib/directives/test;
 /// let _ = store.apply(&"client-a", proto.New("user:2", "2"));
 /// let _ = store.apply(&"client-a", proto.New("post:1", "3"));
 /// test.eq::<string>(store.apply(&"client-a", proto.Keys(Some("user:*"))), "LIST\nuser:1\nuser:2\nEND");
+///
+/// OwnTtlExpiresOnNextCommand:
+/// let mut store: Store = new();
+/// test_set_now_ms(&mut store, Some(0:int64));
+/// let _ = store.apply(&"client-a", proto.New("k", "1"));
+/// test.eq::<string>(store.apply(&"client-a", proto.Own("k", Some(1:uint))), "OK ttl=1");
+/// test_set_now_ms(&mut store, Some(1500:int64));
+/// test.eq::<string>(store.apply(&"client-b", proto.Set("k", "2")), "OK version=2");
+///
+/// BorrowTtlExpiresOnNextCommand:
+/// let mut store: Store = new();
+/// test_set_now_ms(&mut store, Some(0:int64));
+/// let _ = store.apply(&"client-a", proto.New("k", "1"));
+/// test.eq::<string>(store.apply(&"client-b", proto.Borrow("k", Some(1:uint))), "OK ttl=1");
+/// test_set_now_ms(&mut store, Some(1500:int64));
+/// test.eq::<string>(store.apply(&"client-b", proto.WhoAmI()), "CLIENT id=client-b owned=0 borrowed=0");
+///
+/// StatAfterExpiryClearsLease:
+/// let mut store: Store = new();
+/// test_set_now_ms(&mut store, Some(0:int64));
+/// let _ = store.apply(&"client-a", proto.New("k", "1"));
+/// let _ = store.apply(&"client-a", proto.Own("k", Some(1:uint)));
+/// test_set_now_ms(&mut store, Some(1500:int64));
+/// test.eq::<string>(store.apply(&"client-b", proto.Stat("k")), "STAT owner=none borrowers=0 ttl=none version=1 sealed=false");

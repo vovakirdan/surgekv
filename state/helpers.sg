@@ -1,5 +1,20 @@
 pragma module;
 
+fn current_now_ms(store: &Store) -> int64 {
+    return compare store.test_now_ms {
+        Some(now_ms) => now_ms;
+        nothing => {
+            let now = time.monotonic_now();
+            ret now.as_millis();
+        }
+    };
+}
+
+fn test_set_now_ms(store: &mut Store, now_ms: int64?) -> nothing {
+    store.test_now_ms = now_ms;
+    return nothing;
+}
+
 fn owner_matches(entry: &Entry, client_id: &string) -> bool {
     return compare entry.owner {
         Some(owner_id) => owner_id == *client_id;
@@ -51,6 +66,50 @@ fn remove_borrower(entry: &mut Entry, client_id: &string) -> bool {
 
     entry.borrowers = next;
     return removed;
+}
+
+fn clear_lease(entry: &mut Entry) -> nothing {
+    let owner: string? = nothing;
+    let ttl: uint? = nothing;
+    let deadline_ms: int64? = nothing;
+    entry.owner = owner;
+    entry.borrowers = [];
+    entry.lease_ttl = ttl;
+    entry.lease_deadline_ms = deadline_ms;
+    return nothing;
+}
+
+fn lease_expired(entry: &Entry, now_ms: int64) -> bool {
+    return compare entry.lease_deadline_ms {
+        Some(deadline_ms) => now_ms >= deadline_ms;
+        nothing => false;
+    };
+}
+
+fn expire_entry_if_needed(entry: &mut Entry, now_ms: int64) -> bool {
+    if !lease_expired(entry, now_ms) {
+        return false;
+    }
+    clear_lease(entry);
+    return true;
+}
+
+fn prune_expired(store: &mut Store, now_ms: int64) -> nothing {
+    let keys: string[] = store.entries.keys();
+    let mut i: int = 0;
+    let length: int = keys.__len() to int;
+    while i < length {
+        let key_ref = keys[i];
+        compare store.entries.get_mut(key_ref) {
+            Some(entry) => {
+                let _ = expire_entry_if_needed(entry, now_ms);
+                0:int;
+            }
+            nothing => 0:int;
+        };
+        i = i + 1;
+    }
+    return nothing;
 }
 
 fn count_holds(store: &Store, client_id: &string) -> (uint, uint) {

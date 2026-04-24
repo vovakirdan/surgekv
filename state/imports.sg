@@ -1,3 +1,4 @@
 pragma module;
 
 import ../proto as proto;
+import stdlib/time as time;
