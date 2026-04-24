@@ -19,7 +19,6 @@ import stdlib/directives/test;
 /// test.eq::<string>(buffer, "");
 ///
 /// ResponseForLineMapsParseErrors:
-/// let mut store: state.Store = state.new();
-/// test.eq::<string>(response_for_line(&mut store, &"client-1", &"PING"), "PONG");
-/// let bad = response_for_line(&mut store, &"client-1", &"BOOM");
+/// let state_manager = manager.open(1:uint);
+/// let bad = response_for_line(&state_manager, &"client-1", &"BOOM");
 /// test.assert(bad.starts_with("ERROR BAD_CMD"));

@@ -1,0 +1,10 @@
+pragma module;
+
+pub tag Apply(string, proto.Command, Channel<string>);
+
+pub type Message = Apply(string, proto.Command, Channel<string>);
+
+@copy
+pub type Handle = {
+    requests: Channel<Message>,
+};

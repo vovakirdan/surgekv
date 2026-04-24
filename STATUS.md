@@ -11,7 +11,8 @@ Implemented pieces:
 
 - `proto/`: line-oriented wire protocol parsing and response formatting
 - `state/`: in-memory key/value engine with ownership-aware semantics
-- `server/`: sequential TCP listener and per-connection command loop
+- `manager/`: state-manager actor task that owns the store and processes command messages
+- `server/`: TCP listener plus client worker tasks that process multiple connections concurrently
 - `main.sg`: thin `@entrypoint("argv")` bootstrap
 
 ## Implemented Commands
@@ -60,6 +61,8 @@ The current engine already enforces the core ownership model:
 - disconnect cleanup releases ownership and borrowed state for that client
 - lease TTL values are stored, returned in responses, and lazily expired on later commands
 - TTL deadlines use monotonic millisecond timestamps stored as `int64`
+- the `Store` is now owned by a single state-manager task instead of being mutated directly by the TCP loop
+- accepted TCP clients are handed to a worker pool, so one idle connection should not block other clients
 
 ## How To Run
 
@@ -122,8 +125,9 @@ The server should also be smoke-tested end-to-end in an environment that permits
 The current server is intentionally small:
 
 - one in-process store
+- one state-manager task
 - one listener
-- sequential connection handling
+- fixed-size client worker pool
 - no shard manager tasks yet
 - no expiry worker yet
 - TTL expiration is currently lazy, not background-driven
@@ -141,13 +145,13 @@ The previously blocking Surge issues are closed in the current compiler:
 - `#80`: array field access through `&mut` struct backend failures
 - `#82`: `stdlib/time.Duration` conversion intrinsic lowering
 
-There is no current compiler blocker for the implemented sequential server slice.
+There is no current compiler blocker for the implemented worker-pool server slice.
 
 ## Recommended Next Work
 
 The most reasonable next steps for `surgekv` are:
 
 1. move lazy TTL expiration to a real expiry worker
-2. move to shard/state-manager task architecture
-3. introduce listener/client/state-manager task separation
+2. split the single state manager into shard manager tasks
+3. make worker count and queue sizes configurable through argv/config
 4. expand pattern support beyond simple `*` matching only if it is still worth the complexity

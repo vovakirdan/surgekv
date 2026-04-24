@@ -1,0 +1,53 @@
+pragma module;
+
+fn stopped_response() -> string {
+    return "ERROR INTERNAL state manager stopped";
+}
+
+pub async fn run(requests: Channel<Message>) -> nothing {
+    let mut store: state.Store = state.new();
+    let mut done: bool = false;
+
+    while !done {
+        compare requests.recv() {
+            Some(msg) => {
+                compare msg {
+                    Apply(client_id, cmd, reply) => {
+                        let response: string = store.apply(&client_id, cmd);
+                        reply.send(own response);
+                        0:int;
+                    }
+                };
+            }
+            nothing => {
+                done = true;
+                0:int;
+            }
+        };
+    }
+
+    return nothing;
+}
+
+pub fn open(capacity: uint) -> Handle {
+    let requests = make_channel::<Message>(capacity);
+    return Handle { requests = requests };
+}
+
+extern<Handle> {
+    pub fn apply(self: &Handle, client_id: &string, cmd: proto.Command) -> string {
+        let reply = make_channel::<string>(1:uint);
+        let request: Message = Apply(client_id.__clone(), cmd, reply);
+        self.requests.send(own request);
+
+        return compare reply.recv() {
+            Some(response) => response;
+            nothing => stopped_response();
+        };
+    }
+
+    pub fn stop(self: &Handle) -> nothing {
+        self.requests.close();
+        return nothing;
+    }
+}

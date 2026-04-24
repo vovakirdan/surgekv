@@ -2,5 +2,10 @@ pragma module;
 
 import stdlib/net as net;
 
+import ../manager as manager;
 import ../proto as proto;
-import ../state as state;
+
+type AcceptedClient = {
+    handle: int,
+    client_id: string,
+};

@@ -1,0 +1,4 @@
+pragma module;
+
+import ../proto as proto;
+import ../state as state;

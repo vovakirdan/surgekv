@@ -32,10 +32,10 @@ fn take_next_line(buffer: &mut string) -> string? {
     return Some(line);
 }
 
-fn response_for_line(store: &mut state.Store, client_id: &string, line: &string) -> string {
+fn response_for_line(state_manager: &manager.Handle, client_id: &string, line: &string) -> string {
     compare proto.parse_line(line) {
         Success(cmd) => {
-            return store.apply(client_id, cmd);
+            return state_manager.apply(client_id, cmd);
         }
         err => {
             return proto.format_parse_error(&err);
