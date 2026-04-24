@@ -122,6 +122,7 @@ The server should also be smoke-tested end-to-end in an environment that permits
 
 - `surge run . -- <port>`
 - `./target/debug/surgekv <port>`
+- `./scripts/concurrency_smoke.sh [port]`
 
 ## Known Limitations
 
