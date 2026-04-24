@@ -4,6 +4,7 @@ const DEFAULT_READ_CAP: uint = 1024:uint;
 const DEFAULT_STATE_QUEUE_CAP: uint = 64:uint;
 const DEFAULT_CLIENT_QUEUE_CAP: uint = 64:uint;
 const DEFAULT_WORKER_COUNT: uint = 8:uint;
+const DEFAULT_EXPIRY_INTERVAL_MS: uint = 1000:uint;
 
 fn print_listen_banner(port: uint) -> nothing {
     print("surgekv listening on 127.0.0.1:" + (port to string));
@@ -92,6 +93,8 @@ pub async fn serve(port: uint) -> int {
             let state_manager = manager.open(DEFAULT_STATE_QUEUE_CAP);
             let state_requests = state_manager.requests;
             let state_task = spawn manager.run(state_requests);
+            let expiry_manager = state_manager;
+            let expiry_task = spawn expiry.run(expiry_manager, DEFAULT_EXPIRY_INTERVAL_MS);
             let mut next_id: uint = 1:uint;
             let read_cap: uint = DEFAULT_READ_CAP;
             let clients = make_channel::<AcceptedClient>(DEFAULT_CLIENT_QUEUE_CAP);
@@ -120,6 +123,8 @@ pub async fn serve(port: uint) -> int {
                             }
                             err => {
                                 print("accept error code=" + (err.code to string));
+                                expiry_task.cancel();
+                                let _ = expiry_task.await();
                                 clients.close();
                                 while workers.__len() != 0:uint {
                                     let worker = workers.pop().safe();
@@ -134,6 +139,8 @@ pub async fn serve(port: uint) -> int {
                     }
                     Cancelled() => {
                         print("accept cancelled");
+                        expiry_task.cancel();
+                        let _ = expiry_task.await();
                         clients.close();
                         while workers.__len() != 0:uint {
                             let worker = workers.pop().safe();

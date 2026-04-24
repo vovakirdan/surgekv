@@ -12,6 +12,7 @@ Implemented pieces:
 - `proto/`: line-oriented wire protocol parsing and response formatting
 - `state/`: in-memory key/value engine with ownership-aware semantics
 - `manager/`: state-manager actor task that owns the store and processes command messages
+- `expiry/`: background expiry task that periodically asks the state manager to prune expired leases
 - `server/`: TCP listener plus client worker tasks that process multiple connections concurrently
 - `main.sg`: thin `@entrypoint("argv")` bootstrap
 
@@ -59,10 +60,12 @@ The current engine already enforces the core ownership model:
 - sealing makes a key immutable
 - conditional writes use `version`
 - disconnect cleanup releases ownership and borrowed state for that client
-- lease TTL values are stored, returned in responses, and lazily expired on later commands
+- lease TTL values are stored, returned in responses, and expired by a background worker
+- command handling also keeps a lazy expiry pass as a safety net before applying each command
 - TTL deadlines use monotonic millisecond timestamps stored as `int64`
 - the `Store` is now owned by a single state-manager task instead of being mutated directly by the TCP loop
 - accepted TCP clients are handed to a worker pool, so one idle connection should not block other clients
+- the expiry worker sends best-effort prune requests through the same manager queue, so it cannot mutate state concurrently with commands
 
 ## How To Run
 
@@ -129,8 +132,7 @@ The current server is intentionally small:
 - one listener
 - fixed-size client worker pool
 - no shard manager tasks yet
-- no expiry worker yet
-- TTL expiration is currently lazy, not background-driven
+- fixed 1 second expiry interval
 - no authentication
 - no persistence
 - `KEYS` currently supports `*` glob matching only
@@ -151,7 +153,7 @@ There is no current compiler blocker for the implemented worker-pool server slic
 
 The most reasonable next steps for `surgekv` are:
 
-1. move lazy TTL expiration to a real expiry worker
-2. split the single state manager into shard manager tasks
-3. make worker count and queue sizes configurable through argv/config
+1. split the single state manager into shard manager tasks
+2. make worker count, queue sizes, and expiry interval configurable through argv/config
+3. add targeted manual/runtime tests for multi-client behavior once the local environment can run TCP listeners
 4. expand pattern support beyond simple `*` matching only if it is still worth the complexity

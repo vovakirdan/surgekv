@@ -148,9 +148,8 @@ fn apply_keys(store: &Store, pattern: string?) -> string {
         Some(glob) => {
             use_pattern = true;
             pattern_text = glob;
-            0:int;
         }
-        nothing => 0:int;
+        nothing => {}
     };
 
     let length: int = keys.__len() to int;

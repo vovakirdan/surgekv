@@ -1,0 +1,10 @@
+pragma module;
+
+pub async fn run(state_manager: manager.Handle, interval_ms: uint) -> nothing {
+    while true {
+        sleep(interval_ms).await();
+        let _ = state_manager.expire();
+    }
+
+    return nothing;
+}

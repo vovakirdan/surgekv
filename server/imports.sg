@@ -2,6 +2,7 @@ pragma module;
 
 import stdlib/net as net;
 
+import ../expiry as expiry;
 import ../manager as manager;
 import ../proto as proto;
 

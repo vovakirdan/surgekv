@@ -159,9 +159,8 @@ fn apply_disconnect(store: &mut Store, client_id: &string) -> string {
                         }
                     }
                 }
-                0:int;
             }
-            nothing => 0:int;
+            nothing => {}
         };
         i = i + 1;
     }

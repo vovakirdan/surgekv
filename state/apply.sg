@@ -1,6 +1,12 @@
 pragma module;
 
 extern<Store> {
+    pub fn expire(self: &mut Store) -> nothing {
+        let now_ms: int64 = current_now_ms(self);
+        prune_expired(self, now_ms);
+        return nothing;
+    }
+
     pub fn apply(self: &mut Store, client_id: &string, cmd: proto.Command) -> string {
         let now_ms: int64 = current_now_ms(self);
         prune_expired(self, now_ms);

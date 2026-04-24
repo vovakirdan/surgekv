@@ -103,9 +103,8 @@ fn prune_expired(store: &mut Store, now_ms: int64) -> nothing {
         compare store.entries.get_mut(key_ref) {
             Some(entry) => {
                 let _ = expire_entry_if_needed(entry, now_ms);
-                0:int;
             }
-            nothing => 0:int;
+            nothing => {}
         };
         i = i + 1;
     }
@@ -128,9 +127,8 @@ fn count_holds(store: &Store, client_id: &string) -> (uint, uint) {
                 if borrower_contains(entry, client_id) {
                     borrowed = borrowed + 1:uint;
                 }
-                0:int;
             }
-            nothing => 0:int;
+            nothing => {}
         };
         i = i + 1;
     }

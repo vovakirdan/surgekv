@@ -5,16 +5,14 @@ pub fn format_ok(version: uint?, ttl: uint?) -> string {
     compare version {
         Some(value) => {
             out = out + " version=" + (value to string);
-            0:int;
         }
-        nothing => 0:int;
+        nothing => {}
     };
     compare ttl {
         Some(value) => {
             out = out + " ttl=" + (value to string);
-            0:int;
         }
-        nothing => 0:int;
+        nothing => {}
     };
     return out;
 }

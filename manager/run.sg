@@ -15,13 +15,14 @@ pub async fn run(requests: Channel<Message>) -> nothing {
                     Apply(client_id, cmd, reply) => {
                         let response: string = store.apply(&client_id, cmd);
                         reply.send(own response);
-                        0:int;
+                    }
+                    Expire() => {
+                        store.expire();
                     }
                 };
             }
             nothing => {
                 done = true;
-                0:int;
             }
         };
     }
@@ -49,5 +50,10 @@ extern<Handle> {
     pub fn stop(self: &Handle) -> nothing {
         self.requests.close();
         return nothing;
+    }
+
+    pub fn expire(self: &Handle) -> bool {
+        let request: Message = Expire();
+        return self.requests.try_send(own request);
     }
 }

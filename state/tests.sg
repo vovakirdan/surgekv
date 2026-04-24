@@ -76,3 +76,13 @@ import stdlib/directives/test;
 /// let _ = store.apply(&"client-a", proto.Own("k", Some(1:uint)));
 /// test_set_now_ms(&mut store, Some(1500:int64));
 /// test.eq::<string>(store.apply(&"client-b", proto.Stat("k")), "STAT owner=none borrowers=0 ttl=none version=1 sealed=false");
+///
+/// ExpireClearsLeaseWithoutCommand:
+/// let mut store: Store = new();
+/// test_set_now_ms(&mut store, Some(0:int64));
+/// let _ = store.apply(&"client-a", proto.New("k", "1"));
+/// let _ = store.apply(&"client-a", proto.Own("k", Some(1:uint)));
+/// test_set_now_ms(&mut store, Some(1500:int64));
+/// store.expire();
+/// test_set_now_ms(&mut store, Some(0:int64));
+/// test.eq::<string>(store.apply(&"client-b", proto.Stat("k")), "STAT owner=none borrowers=0 ttl=none version=1 sealed=false");

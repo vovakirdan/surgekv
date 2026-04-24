@@ -56,10 +56,10 @@ fn parse_set_cmd(rest: string?) -> Erring<Command, Error> {
                                             Success(version) => {
                                                 return Success(SetIf(parts.head, json_part, version));
                                             }
-                                            _ => 0:int;
+                                            _ => {}
                                         };
                                     }
-                                    _ => 0:int;
+                                    _ => {}
                                 };
                             }
 
