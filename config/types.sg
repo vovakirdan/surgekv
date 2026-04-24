@@ -1,0 +1,27 @@
+pragma module;
+
+pub type ServerConfig = {
+    port: uint,
+    read_cap: uint,
+    state_queue_cap: uint,
+    client_queue_cap: uint,
+    worker_count: uint,
+    expiry_interval_ms: uint,
+};
+
+pub tag ConfigOk(ServerConfig);
+pub tag ConfigHelp(string);
+pub tag ConfigError(string);
+
+pub type ParseResult = ConfigOk(ServerConfig) | ConfigHelp(string) | ConfigError(string);
+
+pub fn defaults() -> ServerConfig {
+    return ServerConfig {
+        port = 7379:uint,
+        read_cap = 1024:uint,
+        state_queue_cap = 64:uint,
+        client_queue_cap = 64:uint,
+        worker_count = 8:uint,
+        expiry_interval_ms = 1000:uint
+    };
+}

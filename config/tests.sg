@@ -1,0 +1,77 @@
+pragma module;
+
+import stdlib/directives/test;
+
+/// test:
+/// Defaults:
+/// let args: string[] = [];
+/// compare parse(args) {
+///     ConfigOk(cfg) => {
+///         test.eq::<uint>(cfg.port, 7379:uint);
+///         test.eq::<uint>(cfg.worker_count, 8:uint);
+///         test.eq::<uint>(cfg.expiry_interval_ms, 1000:uint);
+///     }
+///     finally => {
+///         test.assert(false);
+///     }
+/// };
+///
+/// Flags:
+/// let args: string[] = ["--port", "7400", "--workers=2", "--read-cap", "2048", "--state-queue", "8", "--client-queue", "9", "--expiry-interval-ms", "250"];
+/// compare parse(args) {
+///     ConfigOk(cfg) => {
+///         test.eq::<uint>(cfg.port, 7400:uint);
+///         test.eq::<uint>(cfg.worker_count, 2:uint);
+///         test.eq::<uint>(cfg.read_cap, 2048:uint);
+///         test.eq::<uint>(cfg.state_queue_cap, 8:uint);
+///         test.eq::<uint>(cfg.client_queue_cap, 9:uint);
+///         test.eq::<uint>(cfg.expiry_interval_ms, 250:uint);
+///     }
+///     finally => {
+///         test.assert(false);
+///     }
+/// };
+///
+/// PositionalPort:
+/// let args: string[] = ["7401"];
+/// compare parse(args) {
+///     ConfigOk(cfg) => {
+///         test.eq::<uint>(cfg.port, 7401:uint);
+///     }
+///     finally => {
+///         test.assert(false);
+///     }
+/// };
+///
+/// InvalidWorkerCount:
+/// let args: string[] = ["--workers", "0"];
+/// compare parse(args) {
+///     ConfigError(message) => {
+///         test.eq::<string>(message, "workers must be greater than zero");
+///     }
+///     finally => {
+///         test.assert(false);
+///     }
+/// };
+///
+/// DuplicatePort:
+/// let args: string[] = ["--port", "7400", "7401"];
+/// compare parse(args) {
+///     ConfigError(message) => {
+///         test.eq::<string>(message, "port must be provided either positionally or through --port, not both");
+///     }
+///     finally => {
+///         test.assert(false);
+///     }
+/// };
+///
+/// Help:
+/// let args: string[] = ["--help"];
+/// compare parse(args) {
+///     ConfigHelp(text) => {
+///         test.assert(text.find("usage: surgekv") >= 0);
+///     }
+///     finally => {
+///         test.assert(false);
+///     }
+/// };

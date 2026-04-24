@@ -347,12 +347,25 @@ surgekv/
 
 ## 10. Configuration
 
-```
-surgekv [--port N] [--shards N] [--expiry-interval N]
+Current implementation:
 
---port N            TCP port to listen on (default: 7379)
---shards N          Number of State Manager tasks (default: nCPU)
---expiry-interval N Expiry tick interval in seconds (default: 1)
+```
+surgekv [port] [options]
+
+-p, --port N                 TCP port to listen on (default: 7379)
+-w, --workers N              client worker count (default: 8)
+    --read-cap N             socket read buffer size in bytes (default: 1024)
+    --state-queue N          state manager queue capacity (default: 64)
+    --client-queue N         accepted client queue capacity (default: 64)
+    --expiry-interval-ms N   expiry tick interval in milliseconds (default: 1000)
+```
+
+`surgekv 7400` remains supported as shorthand for `surgekv --port 7400`.
+
+Planned once sharding lands:
+
+```
+--shards N          Number of State Manager tasks
 ```
 
 ---

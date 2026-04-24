@@ -1,0 +1,242 @@
+pragma module;
+
+fn usage() -> string {
+    return "usage: surgekv [port] [options]\n"
+        + "\n"
+        + "options:\n"
+        + "  -p, --port <n>                 TCP port to listen on (default: 7379)\n"
+        + "  -w, --workers <n>              client worker count (default: 8)\n"
+        + "      --read-cap <n>             socket read buffer size in bytes (default: 1024)\n"
+        + "      --state-queue <n>          state manager queue capacity (default: 64)\n"
+        + "      --client-queue <n>         accepted client queue capacity (default: 64)\n"
+        + "      --expiry-interval-ms <n>   background expiry tick in milliseconds (default: 1000)\n"
+        + "  -h, --help                     print this help\n"
+        + "\n"
+        + "compatibility:\n"
+        + "  surgekv 7400 is equivalent to surgekv --port 7400";
+}
+
+fn is_help_arg(arg: &string) -> bool {
+    return arg == "--help" || arg == "-h";
+}
+
+fn has_help(argv: &string[]) -> bool {
+    let length: int = argv.__len() to int;
+    let mut i: int = 0;
+    while i < length {
+        if is_help_arg(argv[i]) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn is_port_flag_arg(arg: &string) -> bool {
+    return arg == "--port" || arg.starts_with("--port=") || arg == "-p" || arg.starts_with("-p");
+}
+
+fn has_explicit_port(argv: &string[]) -> bool {
+    let length: int = argv.__len() to int;
+    let mut i: int = 0;
+    while i < length {
+        if is_port_flag_arg(argv[i]) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn positive_uint(name: &string, value: int) -> Erring<uint, Error> {
+    if value <= 0 {
+        return Error { message = *name + " must be greater than zero", code = 1:uint };
+    }
+    return value to uint;
+}
+
+fn port_uint(value: int) -> Erring<uint, Error> {
+    if value <= 0 || value > 65535 {
+        return Error { message = "port must be in range 1..65535", code = 1:uint };
+    }
+    return value to uint;
+}
+
+fn parse_positional_port(parsed: &sigil.Parsed, key: sigil.Key) -> Erring<uint?, Error> {
+    compare parsed.get_many(key) {
+        Success(args) => {
+            let length: uint = args.__len();
+            if length == 0:uint {
+                return Success(nothing);
+            }
+            if length > 1:uint {
+                return Error { message = "expected at most one positional port", code = 1:uint };
+            }
+            compare uint.from_str(args[0]) {
+                Success(port) => {
+                    if port == 0:uint || port > 65535:uint {
+                        return Error { message = "port must be in range 1..65535", code = 1:uint };
+                    }
+                    return Success(Some(port));
+                }
+                _ => {
+                    return Error { message = "positional port must be an unsigned integer", code = 1:uint };
+                }
+            };
+        }
+        err => {
+            return err;
+        }
+    };
+}
+
+fn int_value(parsed: &sigil.Parsed, key: sigil.Key) -> Erring<int, Error> {
+    return parsed.get_int(key);
+}
+
+pub fn parse(argv: string[]) -> ParseResult {
+    if has_help(&argv) {
+        return ConfigHelp(usage());
+    }
+    let explicit_port: bool = has_explicit_port(&argv);
+
+    let mut app = sigil.AppSpec::new("surgekv");
+    let port_key = app.opt_int("--port", Some("-p"), 7379);
+    let workers_key = app.opt_int("--workers", Some("-w"), 8);
+    let read_cap_key = app.opt_int("--read-cap", nothing, 1024);
+    let state_queue_key = app.opt_int("--state-queue", nothing, 64);
+    let client_queue_key = app.opt_int("--client-queue", nothing, 64);
+    let expiry_key = app.opt_int("--expiry-interval-ms", nothing, 1000);
+    let positional_key = app.positionals_many("args");
+
+    compare sigil.parse(argv, &app) {
+        Success(parsed) => {
+            let mut cfg: ServerConfig = defaults();
+
+            compare int_value(&parsed, port_key) {
+                Success(value) => {
+                    compare port_uint(value) {
+                        Success(port) => {
+                            cfg.port = port;
+                        }
+                        err => {
+                            return ConfigError(err.message);
+                        }
+                    };
+                }
+                err => {
+                    return ConfigError(err.message);
+                }
+            };
+
+            compare parse_positional_port(&parsed, positional_key) {
+                Success(port_opt) => {
+                    compare port_opt {
+                        Some(port) => {
+                            if explicit_port {
+                                return ConfigError("port must be provided either positionally or through --port, not both");
+                            }
+                            cfg.port = port;
+                        }
+                        nothing => {}
+                    };
+                }
+                err => {
+                    return ConfigError(err.message);
+                }
+            };
+
+            compare int_value(&parsed, workers_key) {
+                Success(value) => {
+                    compare positive_uint(&"workers", value) {
+                        Success(out) => {
+                            cfg.worker_count = out;
+                        }
+                        err => {
+                            return ConfigError(err.message);
+                        }
+                    };
+                }
+                err => {
+                    return ConfigError(err.message);
+                }
+            };
+
+            compare int_value(&parsed, read_cap_key) {
+                Success(value) => {
+                    compare positive_uint(&"read-cap", value) {
+                        Success(out) => {
+                            cfg.read_cap = out;
+                        }
+                        err => {
+                            return ConfigError(err.message);
+                        }
+                    };
+                }
+                err => {
+                    return ConfigError(err.message);
+                }
+            };
+
+            compare int_value(&parsed, state_queue_key) {
+                Success(value) => {
+                    compare positive_uint(&"state-queue", value) {
+                        Success(out) => {
+                            cfg.state_queue_cap = out;
+                        }
+                        err => {
+                            return ConfigError(err.message);
+                        }
+                    };
+                }
+                err => {
+                    return ConfigError(err.message);
+                }
+            };
+
+            compare int_value(&parsed, client_queue_key) {
+                Success(value) => {
+                    compare positive_uint(&"client-queue", value) {
+                        Success(out) => {
+                            cfg.client_queue_cap = out;
+                        }
+                        err => {
+                            return ConfigError(err.message);
+                        }
+                    };
+                }
+                err => {
+                    return ConfigError(err.message);
+                }
+            };
+
+            compare int_value(&parsed, expiry_key) {
+                Success(value) => {
+                    compare positive_uint(&"expiry-interval-ms", value) {
+                        Success(out) => {
+                            cfg.expiry_interval_ms = out;
+                        }
+                        err => {
+                            return ConfigError(err.message);
+                        }
+                    };
+                }
+                err => {
+                    return ConfigError(err.message);
+                }
+            };
+
+            return ConfigOk(cfg);
+        }
+        err => {
+            compare err.pretty() {
+                Success(message) => {
+                    return ConfigError(message);
+                }
+                pretty_err => {
+                    return ConfigError(pretty_err.message);
+                }
+            };
+        }
+    };
+}

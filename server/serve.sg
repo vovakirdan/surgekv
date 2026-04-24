@@ -1,11 +1,5 @@
 pragma module;
 
-const DEFAULT_READ_CAP: uint = 1024:uint;
-const DEFAULT_STATE_QUEUE_CAP: uint = 64:uint;
-const DEFAULT_CLIENT_QUEUE_CAP: uint = 64:uint;
-const DEFAULT_WORKER_COUNT: uint = 8:uint;
-const DEFAULT_EXPIRY_INTERVAL_MS: uint = 1000:uint;
-
 fn print_listen_banner(port: uint) -> nothing {
     print("surgekv listening on 127.0.0.1:" + (port to string));
     return nothing;
@@ -86,19 +80,19 @@ async fn serve_worker(clients: Channel<AcceptedClient>, state_manager: manager.H
     return nothing;
 }
 
-pub async fn serve(port: uint) -> int {
-    let listen_res = net.listen("127.0.0.1", port);
+pub async fn serve(cfg: config.ServerConfig) -> int {
+    let listen_res = net.listen("127.0.0.1", cfg.port);
     compare listen_res {
         Success(listener) => {
-            let state_manager = manager.open(DEFAULT_STATE_QUEUE_CAP);
+            let state_manager = manager.open(cfg.state_queue_cap);
             let state_requests = state_manager.requests;
             let state_task = spawn manager.run(state_requests);
             let expiry_manager = state_manager;
-            let expiry_task = spawn expiry.run(expiry_manager, DEFAULT_EXPIRY_INTERVAL_MS);
+            let expiry_task = spawn expiry.run(expiry_manager, cfg.expiry_interval_ms);
             let mut next_id: uint = 1:uint;
-            let read_cap: uint = DEFAULT_READ_CAP;
-            let clients = make_channel::<AcceptedClient>(DEFAULT_CLIENT_QUEUE_CAP);
-            let worker_count: uint = DEFAULT_WORKER_COUNT;
+            let read_cap: uint = cfg.read_cap;
+            let clients = make_channel::<AcceptedClient>(cfg.client_queue_cap);
+            let worker_count: uint = cfg.worker_count;
             let mut workers: Task<nothing>[] = [];
             workers.reserve(worker_count);
             let mut worker_idx: uint = 0:uint;
@@ -109,7 +103,7 @@ pub async fn serve(port: uint) -> int {
                 workers.push(worker);
                 worker_idx = worker_idx + 1:uint;
             }
-            print_listen_banner(port);
+            print_listen_banner(cfg.port);
 
             while true {
                 let accept_res = net.accept(&listener).await();

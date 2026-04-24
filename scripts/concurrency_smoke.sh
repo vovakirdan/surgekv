@@ -137,7 +137,7 @@ fi
 
 [[ -x "$BIN" ]] || fail "binary not found or not executable: $BIN"
 
-"$BIN" "$PORT" >"$server_log" 2>&1 &
+"$BIN" --port "$PORT" --workers 4 --expiry-interval-ms 250 >"$server_log" 2>&1 &
 server_pid="$!"
 wait_for_server
 echo "server: ${HOST}:${PORT}"

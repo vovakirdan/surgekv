@@ -1,12 +1,25 @@
 pragma module;
 
 import server as server;
+import config as config;
 
-@entrypoint("argv")
-fn main(port: uint) -> int {
-    let serve_res = server.serve(port).await();
-    return compare serve_res {
-        Success(code) => code;
-        Cancelled() => 1;
+@entrypoint
+fn main() -> int {
+    compare config.parse(rt_argv()) {
+        config.ConfigOk(cfg) => {
+            let serve_res = server.serve(cfg).await();
+            return compare serve_res {
+                Success(code) => code;
+                Cancelled() => 1;
+            };
+        }
+        config.ConfigHelp(text) => {
+            print(text);
+            return 0;
+        }
+        config.ConfigError(message) => {
+            print("configuration error: " + message);
+            return 1;
+        }
     };
 }
