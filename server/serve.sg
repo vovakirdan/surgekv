@@ -63,19 +63,34 @@ async fn serve_client(conn: TcpConn, router: ShardRouter, client_id: string, rea
     return nothing;
 }
 
+async fn serve_client_handle(handle: int, router: ShardRouter, client_id: string, read_cap: uint) -> nothing {
+    let conn: TcpConn = { __opaque = handle };
+    let _ = serve_client(conn, router, client_id, read_cap).await();
+    return nothing;
+}
+
 async fn serve_worker(clients: Channel<AcceptedClient>, router: ShardRouter, read_cap: uint) -> nothing {
+    // Workers are dispatchers: they keep accepting queued clients and give each
+    // socket its own task. A single idle TCP session must not occupy the worker.
+    let mut client_tasks: Task<nothing>[] = [];
     let mut done: bool = false;
     while !done {
         compare clients.recv() {
             Some(client) => {
-                let conn: TcpConn = { __opaque = client.handle };
                 let client_router = clone_router(&router);
-                let _ = serve_client(conn, client_router, client.client_id, read_cap).await();
+                let task = spawn serve_client_handle(client.handle, client_router, client.client_id, read_cap);
+                client_tasks.push(task);
             }
             nothing => {
                 done = true;
             }
         };
+    }
+
+    while client_tasks.__len() != 0:uint {
+        let task = client_tasks.pop().safe();
+        task.cancel();
+        let _ = task.await();
     }
     return nothing;
 }

@@ -5,7 +5,7 @@ fn usage() -> string {
         + "\n"
         + "options:\n"
         + "  -p, --port <n>                 TCP port to listen on (default: 7379)\n"
-        + "  -w, --workers <n>              client worker count (default: 8)\n"
+        + "  -w, --workers <n>              accepted-client dispatcher count (default: 8)\n"
         + "      --shards <n>               state manager shard count (default: 8)\n"
         + "      --read-cap <n>             socket read buffer size in bytes (default: 1024)\n"
         + "      --state-queue <n>          state manager queue capacity (default: 64)\n"

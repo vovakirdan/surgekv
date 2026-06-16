@@ -232,10 +232,8 @@ Multiple clients holding `BORROW` on the same key read concurrently with no seri
 
 ## 7. Architecture
 
-For the current implementation details and the known client-worker limitation,
-see [ARCHITECTURE.md](ARCHITECTURE.md). This README section is the high-level
-design overview and may lag behind implementation details while the server
-model is still evolving.
+For the current implementation details, see [ARCHITECTURE.md](ARCHITECTURE.md).
+This README section is the high-level design overview.
 
 ### 7.1 Task layout
 
@@ -373,11 +371,11 @@ Current implementation:
 surgekv [port] [options]
 
 -p, --port N                 TCP port to listen on (default: 7379)
--w, --workers N              client worker count (default: 8)
+-w, --workers N              accepted-client dispatcher count (default: 8)
+    --shards N               state manager shard count (default: 8)
     --read-cap N             socket read buffer size in bytes (default: 1024)
     --state-queue N          state manager queue capacity (default: 64)
     --client-queue N         accepted client queue capacity (default: 64)
-    --shards N               state manager shard count (default: 8)
     --expiry-interval-ms N   expiry tick interval in milliseconds (default: 1000)
 ```
 

@@ -8,24 +8,18 @@ load, memory, and deadlock checks.
 
 Multiple clients can connect to one `surgekv` instance.
 
-The current caveat is the client worker model:
+`--workers` is the accepted-client dispatcher count. Dispatchers receive
+accepted sockets from the queue and spawn a dedicated `serve_client` task for
+each connection. A long-lived idle TCP session therefore does not occupy the
+dispatcher, and a single server instance can serve multiple active clients even
+with `--workers 1`.
 
-- `--workers` means "maximum number of active client connections served at the
-  same time" in the current implementation.
-- The default is `8`, so the default server can serve up to eight long-lived
-  client TCP sessions concurrently.
-- With `--workers 1`, one long-lived client occupies the only client worker.
-  Further accepted clients wait in the accepted-client queue until that worker
-  becomes free.
-- State is still sharded separately with `--shards`; client workers and state
-  shards are different layers.
+State is sharded separately with `--shards`; dispatcher workers, client
+connection tasks, and state shards are different layers.
 
-This happens because `serve_worker` awaits `serve_client(...)` directly. A
-worker returns to the accepted-client queue only after the current socket closes.
-
-The target model is to spawn a dedicated task per accepted connection, while
-keeping state managers as the serialization point for each shard. See
-[Target Connection Model](#target-connection-model).
+There is no explicit active-client limit yet. The practical limits are file
+descriptors, memory per connection task, state shard throughput, and the host
+runtime.
 
 ## Component Map
 
@@ -34,7 +28,7 @@ flowchart LR
     subgraph TCP["TCP front end"]
         Listener["net.listen and accept loop"]
         Queue["Channel AcceptedClient"]
-        Workers["client worker tasks"]
+        Workers["accepted-client dispatchers"]
         ClientLoop["serve_client line loop"]
     end
 
@@ -58,7 +52,7 @@ flowchart LR
     Client["TCP client"] --> Listener
     Listener --> Queue
     Queue --> Workers
-    Workers --> ClientLoop
+    Workers -->|"spawn per connection"| ClientLoop
     ClientLoop --> Parser
     Parser --> Router
     Router --> Hash
@@ -88,7 +82,7 @@ flowchart LR
 sequenceDiagram
     autonumber
     participant Client
-    participant Worker as Client worker
+    participant Worker as Client task
     participant Proto as proto parser
     participant Router as ShardRouter
     participant Manager as State manager
@@ -110,56 +104,33 @@ Every command is executed as a text request and text response. The state manager
 does not expose shared mutable state to the TCP layer; it receives messages
 through a channel and replies through a per-request reply channel.
 
-## Current Connection Model
+## Connection Model
 
 ```mermaid
 flowchart TD
     A["accept socket"] --> B["send AcceptedClient to queue"]
-    B --> C{"worker available?"}
-    C -->|"yes"| D["serve_worker receives client"]
-    C -->|"no"| E["client waits in queue"]
-    D --> F["serve_client reads this socket"]
-    F --> G{"socket closed?"}
-    G -->|"no"| F
-    G -->|"yes"| H["broadcast Disconnect"]
-    H --> I["worker returns to queue"]
+    B --> C["dispatcher receives client"]
+    C --> D["spawn serve_client_handle"]
+    D --> E["task owns one TcpConn"]
+    E --> F["read request lines"]
+    F --> G["route commands to state shards"]
+    G --> H{"socket closed?"}
+    H -->|"no"| F
+    H -->|"yes"| I["broadcast Disconnect"]
+    I --> J["close TcpConn"]
 ```
 
 Operational consequences:
 
-- Concurrent long-lived clients are bounded by `--workers`.
-- `--client-queue` only buffers accepted clients. It does not make a single
-  worker multiplex multiple active sockets.
-- A smoke test that keeps one owner connection open and opens a second
-  connection must run with at least `--workers 2`.
-- This is acceptable for the current small smoke tests, but it is not the
-  connection model we want before serious load testing.
-
-## Target Connection Model
-
-The intended server shape is accept-and-spawn:
-
-```mermaid
-flowchart TD
-    A["accept socket"] --> B["assign client id"]
-    B --> C["spawn serve_client task"]
-    C --> D["task owns one TcpConn"]
-    D --> E["route commands to state shards"]
-    E --> F{"socket closed?"}
-    F -->|"no"| D
-    F -->|"yes"| G["broadcast Disconnect"]
-```
-
-In this model, the number of simultaneous client connections is no longer tied
-to `--workers`. The limiting factors become file descriptors, memory per
-connection, state shard throughput, and any explicit connection limit we add.
-
-A careful implementation still needs structured task ownership:
-
-- Keep handles for spawned client tasks so shutdown can cancel and await them.
-- Add a bounded connection limit if we do not want unbounded task growth.
-- Decide whether `--workers` remains as a compatibility flag, becomes an
-  acceptor count, or is replaced with `--max-clients`.
+- Active long-lived clients are not bounded by `--workers`.
+- `--workers` controls how many dispatcher tasks drain the accepted-client
+  queue.
+- `--client-queue` buffers accepted sockets before a dispatcher spawns their
+  client tasks.
+- Workers keep handles to spawned client tasks and cancel/await them during
+  server shutdown.
+- There is still no explicit `--max-clients` limit; that is a future hardening
+  step before serious load testing.
 
 ## State Sharding Model
 
@@ -261,24 +232,23 @@ number of pending expiry records in the shard.
 | Layer | Current behavior | Notes |
 | --- | --- | --- |
 | TCP accept | One accept loop | Accepts sockets and enqueues `AcceptedClient`. |
-| Client serving | Up to `--workers` active sockets | Current limitation for long-lived clients. |
+| Client serving | One task per active socket | Long-lived clients do not occupy dispatchers. |
 | State mutation | One manager task per shard | Intentional serialization point. |
 | Same key writes | Serialized by one shard | Required for ownership and version correctness. |
 | Different key writes | Parallel across shards | Depends on key distribution and shard count. |
 | Expiry | One periodic background task | Sends non-blocking expire messages to shards. |
 | Disconnect cleanup | Full scan per shard | Acceptable for v1; reverse index is a future optimization. |
 
-## Next Architecture Fix
+## Next Hardening Work
 
-Before load testing, the highest-value architecture fix is the connection
-serving model:
+Before serious load testing, the highest-value hardening work is:
 
-1. Replace "worker owns socket until close" with "accept loop or supervisor
-   spawns a client task per accepted socket".
-2. Track active client tasks for shutdown.
-3. Add an explicit connection limit if needed.
-4. Keep state managers unchanged; they are already the right serialization
+1. Add an explicit connection limit if needed.
+2. Add completed-client task pruning if churn makes task-handle retention too
+   costly before shutdown.
+3. Keep state managers unchanged; they are already the right serialization
    boundary for correctness.
+4. Add a reverse client-to-key index if disconnect cleanup becomes too costly.
 
 After that, load tests should measure:
 

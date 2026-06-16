@@ -14,7 +14,7 @@ Implemented pieces:
 - `config/`: CLI configuration parser powered by the `sigil` module
 - `manager/`: state-manager actor task that owns the store and processes command messages
 - `expiry/`: background expiry task that periodically asks the state manager to prune expired leases
-- `server/`: TCP listener plus client worker tasks that route key commands across state-manager shards
+- `server/`: TCP listener plus accepted-client dispatchers that spawn one client task per connection
 - `main.sg`: thin `@entrypoint("argv")` bootstrap
 
 ## Implemented Commands
@@ -68,7 +68,7 @@ The current engine already enforces the core ownership model:
 - each `Store` shard is owned by its state-manager task instead of being mutated directly by the TCP loop
 - key-scoped commands are routed to deterministic state-manager shards with `stdlib/hash`
 - `WHOAMI`, `KEYS`, `Disconnect`, and expiry ticks aggregate or broadcast across shards
-- accepted TCP clients are handed to a worker pool, so one idle connection should not block other clients
+- accepted TCP clients are dispatched into dedicated client tasks, so one idle connection does not block other clients even with `--workers 1`
 - the expiry worker sends best-effort prune requests through the same manager queue, so it cannot mutate state concurrently with commands
 
 ## How To Run
@@ -126,7 +126,7 @@ The server should also be smoke-tested end-to-end in an environment that permits
 
 - `surge run . -- --port <port> --shards 4`
 - `./target/debug/surgekv --port <port> --shards 4`
-- `./scripts/concurrency_smoke.sh [port]`
+- `./scripts/concurrency_smoke.sh [port]` (runs the multi-client path with `--workers 1`)
 
 ## Known Limitations
 
@@ -134,6 +134,8 @@ The current server is intentionally small:
 
 - one in-process sharded store
 - one listener process
+- no explicit active-client limit yet
+- completed client task handles are retained by their dispatcher until server shutdown
 - disconnect cleanup still scans the affected shard stores instead of using a reverse client-to-key index
 - the expiry index uses lazy stale-record cleanup rather than a heap or delete-aware priority queue
 - no authentication
@@ -150,7 +152,7 @@ The previously blocking Surge issues are closed in the current compiler:
 - `#80`: array field access through `&mut` struct backend failures
 - `#82`: `stdlib/time.Duration` conversion intrinsic lowering
 
-There is no current compiler blocker for the implemented worker-pool server slice.
+There is no current compiler blocker for the implemented spawn-per-connection server slice.
 
 ## Recommended Next Work
 

@@ -137,7 +137,9 @@ fi
 
 [[ -x "$BIN" ]] || fail "binary not found or not executable: $BIN"
 
-"$BIN" --port "$PORT" --workers 4 --shards 4 --expiry-interval-ms 250 >"$server_log" 2>&1 &
+# Keep workers at 1 to assert that dispatch workers no longer cap active TCP
+# sessions. The smoke keeps c1 open while c2 sends commands.
+"$BIN" --port "$PORT" --workers 1 --shards 4 --expiry-interval-ms 250 >"$server_log" 2>&1 &
 server_pid="$!"
 wait_for_server
 echo "server: ${HOST}:${PORT}"
