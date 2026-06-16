@@ -7,6 +7,7 @@ fn usage() -> string {
         + "  -p, --port <n>                 TCP port to listen on (default: 7379)\n"
         + "  -w, --workers <n>              accepted-client dispatcher count (default: 8)\n"
         + "      --shards <n>               state manager shard count (default: 8)\n"
+        + "      --max-clients <n>          accepted client limit, 0 = unlimited (default: 0)\n"
         + "      --read-cap <n>             socket read buffer size in bytes (default: 1024)\n"
         + "      --state-queue <n>          state manager queue capacity (default: 64)\n"
         + "      --client-queue <n>         accepted client queue capacity (default: 64)\n"
@@ -52,6 +53,13 @@ fn has_explicit_port(argv: &string[]) -> bool {
 fn positive_uint(name: &string, value: int) -> Erring<uint, Error> {
     if value <= 0 {
         return Error { message = *name + " must be greater than zero", code = 1:uint };
+    }
+    return value to uint;
+}
+
+fn non_negative_uint(name: &string, value: int) -> Erring<uint, Error> {
+    if value < 0 {
+        return Error { message = *name + " must be zero or greater", code = 1:uint };
     }
     return value to uint;
 }
@@ -105,6 +113,7 @@ pub fn parse(argv: string[]) -> ParseResult {
     let port_key = app.opt_int("--port", Some("-p"), 7379);
     let workers_key = app.opt_int("--workers", Some("-w"), 8);
     let shards_key = app.opt_int("--shards", nothing, 8);
+    let max_clients_key = app.opt_int("--max-clients", nothing, 0);
     let read_cap_key = app.opt_int("--read-cap", nothing, 1024);
     let state_queue_key = app.opt_int("--state-queue", nothing, 64);
     let client_queue_key = app.opt_int("--client-queue", nothing, 64);
@@ -169,6 +178,22 @@ pub fn parse(argv: string[]) -> ParseResult {
                     compare positive_uint(&"shards", value) {
                         Success(out) => {
                             cfg.shard_count = out;
+                        }
+                        err => {
+                            return ConfigError(err.message);
+                        }
+                    };
+                }
+                err => {
+                    return ConfigError(err.message);
+                }
+            };
+
+            compare int_value(&parsed, max_clients_key) {
+                Success(value) => {
+                    compare non_negative_uint(&"max-clients", value) {
+                        Success(out) => {
+                            cfg.max_clients = out;
                         }
                         err => {
                             return ConfigError(err.message);

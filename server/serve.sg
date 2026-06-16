@@ -69,7 +69,44 @@ async fn serve_client_handle(handle: int, router: ShardRouter, client_id: string
     return nothing;
 }
 
-async fn serve_worker(clients: Channel<AcceptedClient>, router: ShardRouter, read_cap: uint) -> nothing {
+async fn serve_client_limited(handle: int, router: ShardRouter, client_id: string, read_cap: uint, completed: Channel<uint>, track_completion: bool) -> nothing {
+    let _ = serve_client_handle(handle, router, client_id, read_cap).await();
+    if track_completion {
+        let _ = completed.try_send(1:uint);
+    }
+    return nothing;
+}
+
+fn completion_channel_cap(max_clients: uint) -> uint {
+    if max_clients == 0:uint {
+        return 1:uint;
+    }
+    return max_clients;
+}
+
+fn mark_client_completed(active_clients: uint) -> uint {
+    if active_clients == 0:uint {
+        return 0:uint;
+    }
+    return active_clients - 1:uint;
+}
+
+fn drain_completed_clients(completed: &Channel<uint>, active_clients: uint) -> uint {
+    let mut active: uint = active_clients;
+    while true {
+        compare completed.try_recv() {
+            Some(_) => {
+                active = mark_client_completed(active);
+            }
+            nothing => {
+                break;
+            }
+        };
+    }
+    return active;
+}
+
+async fn serve_worker(clients: Channel<AcceptedClient>, router: ShardRouter, read_cap: uint, completed: Channel<uint>, track_completion: bool) -> nothing {
     // Workers are dispatchers: they keep accepting queued clients and give each
     // socket its own task. A single idle TCP session must not occupy the worker.
     let mut client_tasks: Task<nothing>[] = [];
@@ -78,7 +115,7 @@ async fn serve_worker(clients: Channel<AcceptedClient>, router: ShardRouter, rea
         compare clients.recv() {
             Some(client) => {
                 let client_router = clone_router(&router);
-                let task = spawn serve_client_handle(client.handle, client_router, client.client_id, read_cap);
+                let task = spawn serve_client_limited(client.handle, client_router, client.client_id, read_cap, completed, track_completion);
                 client_tasks.push(task);
             }
             nothing => {
@@ -118,26 +155,46 @@ pub async fn serve(cfg: config.ServerConfig) -> int {
             let mut next_id: uint = 1:uint;
             let read_cap: uint = cfg.read_cap;
             let clients = make_channel::<AcceptedClient>(cfg.client_queue_cap);
+            let completed_clients = make_channel::<uint>(completion_channel_cap(cfg.max_clients));
+            let track_clients: bool = cfg.max_clients != 0:uint;
+            let mut active_clients: uint = 0:uint;
             let worker_count: uint = cfg.worker_count;
             let mut workers: Task<nothing>[] = [];
             workers.reserve(worker_count);
             let mut worker_idx: uint = 0:uint;
             while worker_idx < worker_count {
                 let worker_clients = clients;
+                let worker_completed = completed_clients;
                 let worker_router = clone_router(&router);
-                let worker = spawn serve_worker(worker_clients, worker_router, read_cap);
+                let worker = spawn serve_worker(worker_clients, worker_router, read_cap, worker_completed, track_clients);
                 workers.push(worker);
                 worker_idx = worker_idx + 1:uint;
             }
             print_listen_banner(cfg.port);
 
             while true {
+                if track_clients {
+                    active_clients = drain_completed_clients(&completed_clients, active_clients);
+                    while active_clients >= cfg.max_clients {
+                        compare completed_clients.recv() {
+                            Some(_) => {
+                                active_clients = mark_client_completed(active_clients);
+                            }
+                            nothing => {}
+                        };
+                        active_clients = drain_completed_clients(&completed_clients, active_clients);
+                    }
+                }
+
                 let accept_res = net.accept(&listener).await();
                 compare accept_res {
                     Success(conn_res) => {
                         compare conn_res {
                             Success(conn) => {
                                 let client_id: string = next_client_id(&mut next_id);
+                                if track_clients {
+                                    active_clients = active_clients + 1:uint;
+                                }
                                 let client = AcceptedClient { handle = conn.__opaque, client_id = client_id };
                                 clients.send(own client);
                             }

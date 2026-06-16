@@ -17,9 +17,11 @@ with `--workers 1`.
 State is sharded separately with `--shards`; dispatcher workers, client
 connection tasks, and state shards are different layers.
 
-There is no explicit active-client limit yet. The practical limits are file
-descriptors, memory per connection task, state shard throughput, and the host
-runtime.
+`--max-clients` caps accepted active clients when set above zero. `0` means
+unlimited. When the cap is reached, the accept loop waits for a completion signal
+from an existing client task before accepting another socket. Connections beyond
+that cap wait in the OS backlog; the server does not yet send a protocol-level
+rejection.
 
 ## Component Map
 
@@ -27,6 +29,7 @@ runtime.
 flowchart LR
     subgraph TCP["TCP front end"]
         Listener["net.listen and accept loop"]
+        Limit["max-clients gate"]
         Queue["Channel AcceptedClient"]
         Workers["accepted-client dispatchers"]
         ClientLoop["serve_client line loop"]
@@ -50,7 +53,8 @@ flowchart LR
     end
 
     Client["TCP client"] --> Listener
-    Listener --> Queue
+    Listener --> Limit
+    Limit --> Queue
     Queue --> Workers
     Workers -->|"spawn per connection"| ClientLoop
     ClientLoop --> Parser
@@ -108,16 +112,18 @@ through a channel and replies through a per-request reply channel.
 
 ```mermaid
 flowchart TD
-    A["accept socket"] --> B["send AcceptedClient to queue"]
-    B --> C["dispatcher receives client"]
-    C --> D["spawn serve_client_handle"]
-    D --> E["task owns one TcpConn"]
-    E --> F["read request lines"]
-    F --> G["route commands to state shards"]
-    G --> H{"socket closed?"}
-    H -->|"no"| F
-    H -->|"yes"| I["broadcast Disconnect"]
-    I --> J["close TcpConn"]
+    A["wait until active < max-clients or unlimited"] --> B["accept socket"]
+    B --> C["send AcceptedClient to queue"]
+    C --> D["dispatcher receives client"]
+    D --> E["spawn serve_client_handle"]
+    E --> F["task owns one TcpConn"]
+    F --> G["read request lines"]
+    G --> H["route commands to state shards"]
+    H --> I{"socket closed?"}
+    I -->|"no"| G
+    I -->|"yes"| J["broadcast Disconnect"]
+    J --> K["send completion signal"]
+    K --> L["close TcpConn"]
 ```
 
 Operational consequences:
@@ -127,10 +133,12 @@ Operational consequences:
   queue.
 - `--client-queue` buffers accepted sockets before a dispatcher spawns their
   client tasks.
+- `--max-clients N` limits accepted active clients for `N > 0`; `0` disables
+  the cap.
 - Workers keep handles to spawned client tasks and cancel/await them during
   server shutdown.
-- There is still no explicit `--max-clients` limit; that is a future hardening
-  step before serious load testing.
+- Completed clients send a lightweight completion message to the accept loop so
+  the max-client slot can be reused.
 
 ## State Sharding Model
 
@@ -232,23 +240,27 @@ number of pending expiry records in the shard.
 | Layer | Current behavior | Notes |
 | --- | --- | --- |
 | TCP accept | One accept loop | Accepts sockets and enqueues `AcceptedClient`. |
+| Client limit | Optional `--max-clients` gate | Caps accepted active clients; excess waits in OS backlog. |
 | Client serving | One task per active socket | Long-lived clients do not occupy dispatchers. |
 | State mutation | One manager task per shard | Intentional serialization point. |
 | Same key writes | Serialized by one shard | Required for ownership and version correctness. |
 | Different key writes | Parallel across shards | Depends on key distribution and shard count. |
 | Expiry | One periodic background task | Sends non-blocking expire messages to shards. |
 | Disconnect cleanup | Full scan per shard | Acceptable for v1; reverse index is a future optimization. |
+| Runtime networking | Surge stdlib/runtime path | Current local benchmark latency is dominated by runtime network polling and byte-oriented stdlib I/O. |
 
 ## Next Hardening Work
 
 Before serious load testing, the highest-value hardening work is:
 
-1. Add an explicit connection limit if needed.
+1. Add protocol-level rejection for over-limit connections if backlog waiting is not desirable.
 2. Add completed-client task pruning if churn makes task-handle retention too
    costly before shutdown.
 3. Keep state managers unchanged; they are already the right serialization
    boundary for correctness.
 4. Add a reverse client-to-key index if disconnect cleanup becomes too costly.
+5. Optimize or upstream-fix Surge networking before treating throughput numbers
+   as a state-engine ceiling.
 
 After that, load tests should measure:
 

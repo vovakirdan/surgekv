@@ -69,6 +69,7 @@ The current engine already enforces the core ownership model:
 - key-scoped commands are routed to deterministic state-manager shards with `stdlib/hash`
 - `WHOAMI`, `KEYS`, `Disconnect`, and expiry ticks aggregate or broadcast across shards
 - accepted TCP clients are dispatched into dedicated client tasks, so one idle connection does not block other clients even with `--workers 1`
+- `--max-clients` caps accepted active clients when set above zero; `0` keeps the server unlimited
 - the expiry worker sends best-effort prune requests through the same manager queue, so it cannot mutate state concurrently with commands
 
 ## How To Run
@@ -127,6 +128,8 @@ The server should also be smoke-tested end-to-end in an environment that permits
 - `surge run . -- --port <port> --shards 4`
 - `./target/debug/surgekv --port <port> --shards 4`
 - `./scripts/concurrency_smoke.sh [port]` (runs the multi-client path with `--workers 1`)
+- `./scripts/max_clients_smoke.sh [port]` (verifies `--max-clients 1` slot gating)
+- `./scripts/bench.sh` (writes a short local throughput/latency report)
 
 ## Known Limitations
 
@@ -134,8 +137,9 @@ The current server is intentionally small:
 
 - one in-process sharded store
 - one listener process
-- no explicit active-client limit yet
+- accepted connections beyond `--max-clients` wait in the OS backlog until a slot frees; the server does not yet send an immediate protocol-level rejection
 - completed client task handles are retained by their dispatcher until server shutdown
+- current local network benchmark numbers are dominated by Surge runtime/stdlib networking overhead, especially the multi-worker network poll path
 - disconnect cleanup still scans the affected shard stores instead of using a reverse client-to-key index
 - the expiry index uses lazy stale-record cleanup rather than a heap or delete-aware priority queue
 - no authentication

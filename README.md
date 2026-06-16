@@ -373,6 +373,7 @@ surgekv [port] [options]
 -p, --port N                 TCP port to listen on (default: 7379)
 -w, --workers N              accepted-client dispatcher count (default: 8)
     --shards N               state manager shard count (default: 8)
+    --max-clients N          accepted client limit, 0 = unlimited (default: 0)
     --read-cap N             socket read buffer size in bytes (default: 1024)
     --state-queue N          state manager queue capacity (default: 64)
     --client-queue N         accepted client queue capacity (default: 64)
@@ -386,7 +387,36 @@ not expose host CPU count yet.
 
 ---
 
-## 11. Why This Is Interesting
+## 11. Benchmarks
+
+Run the local benchmark harness:
+
+```bash
+./scripts/bench.sh
+```
+
+The script builds `surgekv`, starts an isolated local server, runs a short
+`PING`/`GET`/`SET`/`mixed` matrix, and writes
+`benchmarks/latest-local.md`.
+
+Redis and Valkey are included automatically when `redis-server` or
+`valkey-server` are installed on the same host.
+
+Longer run example:
+
+```bash
+SURGEKV_BENCH_REQUESTS=50000 \
+SURGEKV_BENCH_CLIENTS="1 8 32 128" \
+./scripts/bench.sh
+```
+
+Current local numbers are strongly shaped by the Surge runtime network polling
+path, so treat the benchmark as a regression and bottleneck finder until that
+runtime layer is optimized.
+
+---
+
+## 12. Why This Is Interesting
 
 surgekv is not a production Redis replacement. It is a demonstration that:
 
