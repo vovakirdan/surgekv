@@ -19,6 +19,6 @@ import stdlib/directives/test;
 /// test.eq::<string>(buffer, "");
 ///
 /// ResponseForLineMapsParseErrors:
-/// let state_manager = manager.open(1:uint);
-/// let bad = response_for_line(&state_manager, &"client-1", &"BOOM");
+/// let router = ShardRouter { shards = [] };
+/// let bad = response_for_line(&router, &"client-1", &"BOOM");
 /// test.assert(bad.starts_with("ERROR BAD_CMD"));

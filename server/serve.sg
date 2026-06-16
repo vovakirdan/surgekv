@@ -5,13 +5,13 @@ fn print_listen_banner(port: uint) -> nothing {
     return nothing;
 }
 
-async fn serve_client(conn: TcpConn, state_manager: manager.Handle, client_id: string, read_cap: uint) -> nothing {
+async fn serve_client(conn: TcpConn, router: ShardRouter, client_id: string, read_cap: uint) -> nothing {
     let mut buffer: string = "";
 
     while true {
         compare take_next_line(&mut buffer) {
             Some(line) => {
-                let response: string = response_for_line(&state_manager, &client_id, &line);
+                let response: string = response_for_line(&router, &client_id, &line);
                 let data: byte[] = line_bytes(response);
                 let write_res = net.write_all(&conn, data).await();
                 let ok: bool = compare write_res {
@@ -58,19 +58,19 @@ async fn serve_client(conn: TcpConn, state_manager: manager.Handle, client_id: s
         };
     }
 
-    let _ = state_manager.apply(&client_id, proto.Disconnect());
+    let _ = router_disconnect(&router, &client_id);
     let _ = net.close_conn(own conn);
     return nothing;
 }
 
-async fn serve_worker(clients: Channel<AcceptedClient>, state_manager: manager.Handle, read_cap: uint) -> nothing {
+async fn serve_worker(clients: Channel<AcceptedClient>, router: ShardRouter, read_cap: uint) -> nothing {
     let mut done: bool = false;
     while !done {
         compare clients.recv() {
             Some(client) => {
                 let conn: TcpConn = { __opaque = client.handle };
-                let worker_manager = state_manager;
-                let _ = serve_client(conn, worker_manager, client.client_id, read_cap).await();
+                let client_router = clone_router(&router);
+                let _ = serve_client(conn, client_router, client.client_id, read_cap).await();
             }
             nothing => {
                 done = true;
@@ -84,11 +84,22 @@ pub async fn serve(cfg: config.ServerConfig) -> int {
     let listen_res = net.listen("127.0.0.1", cfg.port);
     compare listen_res {
         Success(listener) => {
-            let state_manager = manager.open(cfg.state_queue_cap);
-            let state_requests = state_manager.requests;
-            let state_task = spawn manager.run(state_requests);
-            let expiry_manager = state_manager;
-            let expiry_task = spawn expiry.run(expiry_manager, cfg.expiry_interval_ms);
+            let mut state_tasks: Task<nothing>[] = [];
+            let mut shards: manager.Handle[] = [];
+            shards.reserve(cfg.shard_count);
+            state_tasks.reserve(cfg.shard_count);
+            let mut shard_idx: uint = 0:uint;
+            while shard_idx < cfg.shard_count {
+                let shard: manager.Handle = manager.open(cfg.state_queue_cap);
+                let requests = shard.requests;
+                let state_task = spawn manager.run(requests);
+                shards.push(shard);
+                state_tasks.push(state_task);
+                shard_idx = shard_idx + 1:uint;
+            }
+            let router: ShardRouter = ShardRouter { shards = shards };
+            let expiry_handles: manager.Handle[] = clone_handles(&router.shards);
+            let expiry_task = spawn expiry.run(expiry_handles, cfg.expiry_interval_ms);
             let mut next_id: uint = 1:uint;
             let read_cap: uint = cfg.read_cap;
             let clients = make_channel::<AcceptedClient>(cfg.client_queue_cap);
@@ -98,8 +109,8 @@ pub async fn serve(cfg: config.ServerConfig) -> int {
             let mut worker_idx: uint = 0:uint;
             while worker_idx < worker_count {
                 let worker_clients = clients;
-                let worker_manager = state_manager;
-                let worker = spawn serve_worker(worker_clients, worker_manager, read_cap);
+                let worker_router = clone_router(&router);
+                let worker = spawn serve_worker(worker_clients, worker_router, read_cap);
                 workers.push(worker);
                 worker_idx = worker_idx + 1:uint;
             }
@@ -124,8 +135,11 @@ pub async fn serve(cfg: config.ServerConfig) -> int {
                                     let worker = workers.pop().safe();
                                     let _ = worker.await();
                                 }
-                                state_manager.stop();
-                                let _ = state_task.await();
+                                stop_shards(&router);
+                                while state_tasks.__len() != 0:uint {
+                                    let state_task = state_tasks.pop().safe();
+                                    let _ = state_task.await();
+                                }
                                 let _ = net.close_listener(own listener);
                                 return 1;
                             }
@@ -140,8 +154,11 @@ pub async fn serve(cfg: config.ServerConfig) -> int {
                             let worker = workers.pop().safe();
                             let _ = worker.await();
                         }
-                        state_manager.stop();
-                        let _ = state_task.await();
+                        stop_shards(&router);
+                        while state_tasks.__len() != 0:uint {
+                            let state_task = state_tasks.pop().safe();
+                            let _ = state_task.await();
+                        }
                         let _ = net.close_listener(own listener);
                         return 1;
                     }

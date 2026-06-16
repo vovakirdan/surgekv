@@ -79,35 +79,60 @@ fn clear_lease(entry: &mut Entry) -> nothing {
     return nothing;
 }
 
-fn lease_expired(entry: &Entry, now_ms: int64) -> bool {
-    return compare entry.lease_deadline_ms {
-        Some(deadline_ms) => now_ms >= deadline_ms;
-        nothing => false;
+fn expiry_record_current(store: &Store, key: &string, deadline_ms: int64) -> bool {
+    compare store.entries.get_ref(key) {
+        Some(entry) => {
+            return compare entry.lease_deadline_ms {
+                Some(current_deadline) => current_deadline == deadline_ms;
+                nothing => false;
+            };
+        }
+        nothing => {
+            return false;
+        }
     };
 }
 
-fn expire_entry_if_needed(entry: &mut Entry, now_ms: int64) -> bool {
-    if !lease_expired(entry, now_ms) {
+fn expire_index_record(store: &mut Store, key: &string, deadline_ms: int64, now_ms: int64) -> bool {
+    if now_ms < deadline_ms {
         return false;
     }
-    clear_lease(entry);
-    return true;
+
+    compare store.entries.get_mut(key) {
+        Some(entry) => {
+            let current_record: bool = compare entry.lease_deadline_ms {
+                Some(current_deadline) => current_deadline == deadline_ms;
+                nothing => false;
+            };
+            if !current_record {
+                return false;
+            }
+            clear_lease(entry);
+            return true;
+        }
+        nothing => {
+            return false;
+        }
+    };
 }
 
 fn prune_expired(store: &mut Store, now_ms: int64) -> nothing {
-    let keys: string[] = store.entries.keys();
+    let mut next: ExpiryRecord[] = [];
+    let length: int = store.expiry_index.__len() to int;
     let mut i: int = 0;
-    let length: int = keys.__len() to int;
     while i < length {
-        let key_ref = keys[i];
-        compare store.entries.get_mut(key_ref) {
-            Some(entry) => {
-                let _ = expire_entry_if_needed(entry, now_ms);
+        let key: string = clone(store.expiry_index[i].key);
+        let deadline_ms: int64 = store.expiry_index[i].deadline_ms;
+        if deadline_ms <= now_ms {
+            let _ = expire_index_record(store, &key, deadline_ms, now_ms);
+        } else {
+            if expiry_record_current(store, &key, deadline_ms) {
+                next.push(ExpiryRecord { key = key, deadline_ms = deadline_ms });
             }
-            nothing => {}
-        };
+        }
         i = i + 1;
     }
+    store.expiry_index = next;
     return nothing;
 }
 

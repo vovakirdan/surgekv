@@ -208,7 +208,7 @@ shard_index = hash(key) % num_shards
 
 Each shard is an independent Surge task with exclusive ownership of its HashMap — no mutexes, no shared memory. Operations on different keys in different shards execute fully in parallel.
 
-Number of shards is set at startup: `surgekv --shards 8` (default: number of CPU cores).
+Number of shards is set at startup: `surgekv --shards 8` (default: `8` until the stdlib exposes host CPU count).
 
 ### 6.3 Borrowed reads
 
@@ -247,13 +247,14 @@ Client task (one per TCP connection)
 State Manager task (one per shard)
   ├─ receives ClientMsg from Channel<ClientMsg>
   ├─ owns HashMap<string, Entry> — no other task touches it
+  ├─ owns an expiry index for active lease deadlines
   ├─ executes command, updates state
   └─ sends Response to client's reply Channel<string>
 
 Expiry Worker task
   ├─ ticks every 1 second
   ├─ sends Tick message to all State Managers
-  └─ each Manager scans its TTL set and auto-releases expired leases
+  └─ each Manager walks its expiry index and auto-releases expired leases
 ```
 
 ### 7.2 Surge types
@@ -265,8 +266,14 @@ type Entry = {
     owner:         string?,          // ClientID or nothing
     borrowers:     string[],         // list of ClientIDs
     sealed:        bool,
-    lease_expires: uint?,            // Unix timestamp seconds, or nothing
+    lease_ttl:     uint?,            // original TTL seconds, or nothing
+    lease_deadline_ms: int64?,       // monotonic deadline, or nothing
     version:       uint,
+}
+
+type ExpiryRecord = {
+    key:         string,
+    deadline_ms: int64,
 }
 
 // All possible client commands
@@ -301,6 +308,14 @@ When a Client task detects EOF or a TCP error, it sends `Command::Disconnect` wi
 
 This is a full scan of the shard — acceptable for v1 (shards are small). v2 can maintain a reverse index `ClientID → []key` to make it O(affected keys).
 
+### 7.4 Expiry index
+
+Each State Manager owns an `ExpiryRecord[]` alongside its entries map. `OWN` and
+`BORROW` with `TTL` append a deadline record. Expiry ticks walk this index
+instead of scanning every stored key. Renewed or released leases leave stale
+records behind; the next expiry pass drops stale records when their stored
+deadline no longer matches the entry's current `lease_deadline_ms`.
+
 ---
 
 ## 8. Project Structure
@@ -328,7 +343,7 @@ surgekv/
 
 ### In scope
 - All commands listed in §5.2
-- Sharding (configurable, default = nCPU)
+- Sharding (configurable, default = 8)
 - TTL + auto-expiry
 - Auto-release on client disconnect
 - JSON validation on `NEW`/`SET`
@@ -357,16 +372,14 @@ surgekv [port] [options]
     --read-cap N             socket read buffer size in bytes (default: 1024)
     --state-queue N          state manager queue capacity (default: 64)
     --client-queue N         accepted client queue capacity (default: 64)
+    --shards N               state manager shard count (default: 8)
     --expiry-interval-ms N   expiry tick interval in milliseconds (default: 1000)
 ```
 
 `surgekv 7400` remains supported as shorthand for `surgekv --port 7400`.
 
-Planned once sharding lands:
-
-```
---shards N          Number of State Manager tasks
-```
+The default shard count is currently fixed at `8` because the Surge stdlib does
+not expose host CPU count yet.
 
 ---
 

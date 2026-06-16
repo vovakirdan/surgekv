@@ -6,6 +6,7 @@ fn usage() -> string {
         + "options:\n"
         + "  -p, --port <n>                 TCP port to listen on (default: 7379)\n"
         + "  -w, --workers <n>              client worker count (default: 8)\n"
+        + "      --shards <n>               state manager shard count (default: 8)\n"
         + "      --read-cap <n>             socket read buffer size in bytes (default: 1024)\n"
         + "      --state-queue <n>          state manager queue capacity (default: 64)\n"
         + "      --client-queue <n>         accepted client queue capacity (default: 64)\n"
@@ -103,6 +104,7 @@ pub fn parse(argv: string[]) -> ParseResult {
     let mut app = sigil.AppSpec::new("surgekv");
     let port_key = app.opt_int("--port", Some("-p"), 7379);
     let workers_key = app.opt_int("--workers", Some("-w"), 8);
+    let shards_key = app.opt_int("--shards", nothing, 8);
     let read_cap_key = app.opt_int("--read-cap", nothing, 1024);
     let state_queue_key = app.opt_int("--state-queue", nothing, 64);
     let client_queue_key = app.opt_int("--client-queue", nothing, 64);
@@ -151,6 +153,22 @@ pub fn parse(argv: string[]) -> ParseResult {
                     compare positive_uint(&"workers", value) {
                         Success(out) => {
                             cfg.worker_count = out;
+                        }
+                        err => {
+                            return ConfigError(err.message);
+                        }
+                    };
+                }
+                err => {
+                    return ConfigError(err.message);
+                }
+            };
+
+            compare int_value(&parsed, shards_key) {
+                Success(value) => {
+                    compare positive_uint(&"shards", value) {
+                        Success(out) => {
+                            cfg.shard_count = out;
                         }
                         err => {
                             return ConfigError(err.message);

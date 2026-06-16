@@ -137,7 +137,7 @@ fi
 
 [[ -x "$BIN" ]] || fail "binary not found or not executable: $BIN"
 
-"$BIN" --port "$PORT" --workers 4 --expiry-interval-ms 250 >"$server_log" 2>&1 &
+"$BIN" --port "$PORT" --workers 4 --shards 4 --expiry-interval-ms 250 >"$server_log" 2>&1 &
 server_pid="$!"
 wait_for_server
 echo "server: ${HOST}:${PORT}"
@@ -162,6 +162,22 @@ send_line "$c2_in_fd" "SET smoke:key 2"
 expect_line "$c2_out_fd" "OK version=2"
 send_line "$c2_in_fd" "GET smoke:key"
 expect_line "$c2_out_fd" "VALUE 2"
+send_line "$c2_in_fd" "WHOAMI"
+expect_line "$c2_out_fd" "CLIENT id=client-3 owned=0 borrowed=0"
+
+send_line "$c2_in_fd" "NEW user:2 2"
+expect_line "$c2_out_fd" "OK version=1"
+send_line "$c2_in_fd" "NEW post:1 1"
+expect_line "$c2_out_fd" "OK version=1"
+send_line "$c2_in_fd" "NEW user:1 1"
+expect_line "$c2_out_fd" "OK version=1"
+send_line "$c2_in_fd" "KEYS *"
+expect_line "$c2_out_fd" "LIST"
+expect_line "$c2_out_fd" "post:1"
+expect_line "$c2_out_fd" "smoke:key"
+expect_line "$c2_out_fd" "user:1"
+expect_line "$c2_out_fd" "user:2"
+expect_line "$c2_out_fd" "END"
 
 send_line "$c2_in_fd" "OWN smoke:key TTL 1"
 expect_line "$c2_out_fd" "OK ttl=1"

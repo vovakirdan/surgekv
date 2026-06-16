@@ -6,6 +6,7 @@ pub type ServerConfig = {
     state_queue_cap: uint,
     client_queue_cap: uint,
     worker_count: uint,
+    shard_count: uint,
     expiry_interval_ms: uint,
 };
 
@@ -22,6 +23,7 @@ pub fn defaults() -> ServerConfig {
         state_queue_cap = 64:uint,
         client_queue_cap = 64:uint,
         worker_count = 8:uint,
+        shard_count = 8:uint,
         expiry_interval_ms = 1000:uint
     };
 }

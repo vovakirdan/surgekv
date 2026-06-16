@@ -1,23 +1,32 @@
 pragma module;
 
-fn set_ttl(entry: &mut Entry, ttl: uint?, now_ms: int64) -> uint? {
+fn set_ttl(entry: &mut Entry, ttl: uint?, now_ms: int64) -> LeaseUpdate {
     compare ttl {
         Some(value) => {
             let ttl_ms: int64 = (value to int64) * 1000:int64;
             let deadline_ms: int64 = now_ms + ttl_ms;
             entry.lease_ttl = Some(value);
             entry.lease_deadline_ms = Some(deadline_ms);
-            return Some(value);
+            return LeaseUpdate { ttl = Some(value), deadline_ms = Some(deadline_ms) };
         }
         nothing => {
             let stored: uint? = nothing;
             let deadline_ms: int64? = nothing;
             entry.lease_ttl = stored;
             entry.lease_deadline_ms = deadline_ms;
-            let out: uint? = nothing;
-            return out;
+            return LeaseUpdate { ttl = nothing, deadline_ms = nothing };
         }
     };
+}
+
+fn index_expiry(store: &mut Store, key: &string, deadline_ms: int64?) -> nothing {
+    compare deadline_ms {
+        Some(value) => {
+            store.expiry_index.push(ExpiryRecord { key = key.__clone(), deadline_ms = value });
+        }
+        nothing => {}
+    };
+    return nothing;
 }
 
 fn apply_own(store: &mut Store, client_id: &string, key: &string, ttl: uint?, now_ms: int64) -> string {
@@ -37,8 +46,11 @@ fn apply_own(store: &mut Store, client_id: &string, key: &string, ttl: uint?, no
                 nothing => false;
             };
             if owned_by_client {
-                let ttl_value: uint? = set_ttl(entry, ttl, now_ms);
-                return ok_ttl(ttl_value);
+                let update: LeaseUpdate = set_ttl(entry, ttl, now_ms);
+                let response: string = ok_ttl(update.ttl);
+                @drop entry;
+                index_expiry(store, key, update.deadline_ms);
+                return response;
             }
             if owner_present {
                 return conflict_line();
@@ -47,8 +59,11 @@ fn apply_own(store: &mut Store, client_id: &string, key: &string, ttl: uint?, no
                 return conflict_line();
             }
             entry.owner = Some(client_id.__clone());
-            let ttl_value: uint? = set_ttl(entry, ttl, now_ms);
-            return ok_ttl(ttl_value);
+            let update: LeaseUpdate = set_ttl(entry, ttl, now_ms);
+            let response: string = ok_ttl(update.ttl);
+            @drop entry;
+            index_expiry(store, key, update.deadline_ms);
+            return response;
         }
         nothing => {
             return not_found_line();
@@ -67,8 +82,11 @@ fn apply_borrow(store: &mut Store, client_id: &string, key: &string, ttl: uint?,
                 return owned_line();
             }
             add_borrower(entry, client_id);
-            let ttl_value: uint? = set_ttl(entry, ttl, now_ms);
-            return ok_ttl(ttl_value);
+            let update: LeaseUpdate = set_ttl(entry, ttl, now_ms);
+            let response: string = ok_ttl(update.ttl);
+            @drop entry;
+            index_expiry(store, key, update.deadline_ms);
+            return response;
         }
         nothing => {
             return not_found_line();

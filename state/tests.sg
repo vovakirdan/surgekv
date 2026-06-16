@@ -86,3 +86,17 @@ import stdlib/directives/test;
 /// store.expire();
 /// test_set_now_ms(&mut store, Some(0:int64));
 /// test.eq::<string>(store.apply(&"client-b", proto.Stat("k")), "STAT owner=none borrowers=0 ttl=none version=1 sealed=false");
+///
+/// ExpireIndexIgnoresStaleRenewal:
+/// let mut store: Store = new();
+/// test_set_now_ms(&mut store, Some(0:int64));
+/// let _ = store.apply(&"client-a", proto.New("k", "1"));
+/// let _ = store.apply(&"client-a", proto.Own("k", Some(1:uint)));
+/// test_set_now_ms(&mut store, Some(500:int64));
+/// let _ = store.apply(&"client-a", proto.Own("k", Some(5:uint)));
+/// test_set_now_ms(&mut store, Some(1500:int64));
+/// store.expire();
+/// test.eq::<string>(store.apply(&"client-b", proto.Set("k", "2")), "ERROR LOCKED key is locked");
+/// test_set_now_ms(&mut store, Some(6000:int64));
+/// store.expire();
+/// test.eq::<string>(store.apply(&"client-b", proto.Set("k", "2")), "OK version=2");

@@ -1,9 +1,14 @@
 pragma module;
 
-pub async fn run(state_manager: manager.Handle, interval_ms: uint) -> nothing {
+pub async fn run(state_managers: manager.Handle[], interval_ms: uint) -> nothing {
     while true {
         sleep(interval_ms).await();
-        let _ = state_manager.expire();
+        let count: int = state_managers.__len() to int;
+        let mut i: int = 0;
+        while i < count {
+            let _ = state_managers[i].expire();
+            i = i + 1;
+        }
     }
 
     return nothing;

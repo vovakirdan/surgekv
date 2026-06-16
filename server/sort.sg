@@ -1,0 +1,46 @@
+pragma module;
+
+fn server_string_lt(a: &string, b: &string) -> bool {
+    let la: int = a.__len() to int;
+    let lb: int = b.__len() to int;
+    let mut i: int = 0;
+    let mut min: int = la;
+    if lb < min {
+        min = lb;
+    }
+    while i < min {
+        let ac: uint32 = a[i];
+        let bc: uint32 = b[i];
+        if ac < bc {
+            return true;
+        }
+        if ac > bc {
+            return false;
+        }
+        i = i + 1;
+    }
+    return la < lb;
+}
+
+fn server_sort_strings(strings: &mut string[]) -> nothing {
+    let n: int = strings.__len() to int;
+    if n <= 1 {
+        return nothing;
+    }
+
+    let mut i: int = 0;
+    while i < n {
+        let mut j: int = 0;
+        while j + 1 < n - i {
+            let left: string = clone(strings[j]);
+            let right: string = clone(strings[j + 1]);
+            if server_string_lt(&right, &left) {
+                strings[j] = right;
+                strings[j + 1] = left;
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    return nothing;
+}

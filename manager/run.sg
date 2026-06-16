@@ -19,6 +19,14 @@ pub async fn run(requests: Channel<Message>) -> nothing {
                     Expire() => {
                         store.expire();
                     }
+                    Holds(client_id, reply) => {
+                        let counts: state.HoldCount = store.hold_count(&client_id);
+                        reply.send(own counts);
+                    }
+                    Keys(pattern, reply) => {
+                        let keys: string[] = store.list_keys(pattern);
+                        reply.send(own keys);
+                    }
                 };
             }
             nothing => {
@@ -55,5 +63,27 @@ extern<Handle> {
     pub fn expire(self: &Handle) -> bool {
         let request: Message = Expire();
         return self.requests.try_send(own request);
+    }
+
+    pub fn holds(self: &Handle, client_id: &string) -> state.HoldCount {
+        let reply = make_channel::<state.HoldCount>(1:uint);
+        let request: Message = Holds(client_id.__clone(), reply);
+        self.requests.send(own request);
+
+        return compare reply.recv() {
+            Some(counts) => counts;
+            nothing => state.HoldCount { owned = 0:uint, borrowed = 0:uint };
+        };
+    }
+
+    pub fn keys(self: &Handle, pattern: string?) -> string[] {
+        let reply = make_channel::<string[]>(1:uint);
+        let request: Message = Keys(pattern, reply);
+        self.requests.send(own request);
+
+        return compare reply.recv() {
+            Some(keys) => keys;
+            nothing => [];
+        };
     }
 }

@@ -1,0 +1,152 @@
+pragma module;
+
+type ShardRouter = {
+    shards: manager.Handle[],
+};
+
+fn clone_pattern(pattern: &string?) -> string? {
+    return compare pattern {
+        Some(value) => Some(value.__clone());
+        nothing => nothing;
+    };
+}
+
+fn clone_handles(handles: &manager.Handle[]) -> manager.Handle[] {
+    let mut out: manager.Handle[] = [];
+    let count: uint = handles.__len();
+    out.reserve(count);
+    let mut i: int = 0;
+    while i < (count to int) {
+        out.push(clone(handles[i]));
+        i = i + 1;
+    }
+    return out;
+}
+
+fn clone_router(router: &ShardRouter) -> ShardRouter {
+    return ShardRouter { shards = clone_handles(router.shards) };
+}
+
+fn first_shard(router: &ShardRouter) -> manager.Handle {
+    return clone(router.shards[0]);
+}
+
+fn shard_for_key(router: &ShardRouter, key: &string) -> manager.Handle {
+    let shard_count: uint = router.shards.__len();
+    if shard_count == 0:uint {
+        return first_shard(router);
+    }
+    let digest: hash.Hash64 = hash.stable64_string(key);
+    compare digest.bucket(shard_count) {
+        Some(index) => {
+            return clone(router.shards[index to int]);
+        }
+        nothing => {
+            return first_shard(router);
+        }
+    };
+}
+
+fn router_disconnect(router: &ShardRouter, client_id: &string) -> string {
+    let count: int = router.shards.__len() to int;
+    let mut i: int = 0;
+    while i < count {
+        let shard: manager.Handle = clone(router.shards[i]);
+        let _ = shard.apply(client_id, proto.Disconnect());
+        i = i + 1;
+    }
+    return "OK";
+}
+
+fn router_whoami(router: &ShardRouter, client_id: &string) -> string {
+    let mut owned: uint = 0:uint;
+    let mut borrowed: uint = 0:uint;
+    let count: int = router.shards.__len() to int;
+    let mut i: int = 0;
+    while i < count {
+        let shard: manager.Handle = clone(router.shards[i]);
+        let holds: state.HoldCount = shard.holds(client_id);
+        owned = owned + holds.owned;
+        borrowed = borrowed + holds.borrowed;
+        i = i + 1;
+    }
+    return "CLIENT id=" + *client_id + " owned=" + (owned to string) + " borrowed=" + (borrowed to string);
+}
+
+fn router_keys(router: &ShardRouter, pattern: string?) -> string {
+    let mut keys: string[] = [];
+    let count: int = router.shards.__len() to int;
+    let mut i: int = 0;
+    while i < count {
+        let shard: manager.Handle = clone(router.shards[i]);
+        let shard_keys: string[] = shard.keys(clone_pattern(&pattern));
+        let shard_key_count: int = shard_keys.__len() to int;
+        let mut j: int = 0;
+        while j < shard_key_count {
+            keys.push(clone(shard_keys[j]));
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    server_sort_strings(&mut keys);
+    return proto.format_list(&keys);
+}
+
+fn router_response(router: &ShardRouter, client_id: &string, cmd: proto.Command) -> string {
+    return compare cmd {
+        proto.Ping() => "PONG";
+        proto.WhoAmI() => router_whoami(router, client_id);
+        proto.Keys(pattern) => router_keys(router, pattern);
+        proto.Disconnect() => router_disconnect(router, client_id);
+        proto.New(key, value) => {
+            let shard: manager.Handle = shard_for_key(router, &key);
+            ret shard.apply(client_id, proto.New(key, value));
+        }
+        proto.Get(key) => {
+            let shard: manager.Handle = shard_for_key(router, &key);
+            ret shard.apply(client_id, proto.Get(key));
+        }
+        proto.Set(key, value) => {
+            let shard: manager.Handle = shard_for_key(router, &key);
+            ret shard.apply(client_id, proto.Set(key, value));
+        }
+        proto.SetIf(key, value, expected) => {
+            let shard: manager.Handle = shard_for_key(router, &key);
+            ret shard.apply(client_id, proto.SetIf(key, value, expected));
+        }
+        proto.Del(key) => {
+            let shard: manager.Handle = shard_for_key(router, &key);
+            ret shard.apply(client_id, proto.Del(key));
+        }
+        proto.Own(key, ttl) => {
+            let shard: manager.Handle = shard_for_key(router, &key);
+            ret shard.apply(client_id, proto.Own(key, ttl));
+        }
+        proto.Borrow(key, ttl) => {
+            let shard: manager.Handle = shard_for_key(router, &key);
+            ret shard.apply(client_id, proto.Borrow(key, ttl));
+        }
+        proto.Release(key) => {
+            let shard: manager.Handle = shard_for_key(router, &key);
+            ret shard.apply(client_id, proto.Release(key));
+        }
+        proto.Seal(key) => {
+            let shard: manager.Handle = shard_for_key(router, &key);
+            ret shard.apply(client_id, proto.Seal(key));
+        }
+        proto.Stat(key) => {
+            let shard: manager.Handle = shard_for_key(router, &key);
+            ret shard.apply(client_id, proto.Stat(key));
+        }
+    };
+}
+
+fn stop_shards(router: &ShardRouter) -> nothing {
+    let count: int = router.shards.__len() to int;
+    let mut i: int = 0;
+    while i < count {
+        router.shards[i].stop();
+        i = i + 1;
+    }
+    return nothing;
+}

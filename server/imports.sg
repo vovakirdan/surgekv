@@ -1,11 +1,13 @@
 pragma module;
 
+import stdlib/hash as hash;
 import stdlib/net as net;
 
 import ../config as config;
 import ../expiry as expiry;
 import ../manager as manager;
 import ../proto as proto;
+import ../state as state;
 
 type AcceptedClient = {
     handle: int,

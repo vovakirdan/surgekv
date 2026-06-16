@@ -10,15 +10,32 @@ pub type Entry = {
     version: uint,
 };
 
+type ExpiryRecord = {
+    key: string,
+    deadline_ms: int64,
+};
+
 pub type Store = {
     entries: Map<string, Entry>,
+    expiry_index: ExpiryRecord[],
     test_now_ms: int64?,
+};
+
+pub type HoldCount = {
+    owned: uint,
+    borrowed: uint,
+};
+
+type LeaseUpdate = {
+    ttl: uint?,
+    deadline_ms: int64?,
 };
 
 pub fn new() -> Store {
     let test_now_ms: int64? = nothing;
     return Store {
         entries = Map::<string, Entry>.new(),
+        expiry_index = [],
         test_now_ms = test_now_ms
     };
 }

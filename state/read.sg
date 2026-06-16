@@ -138,7 +138,18 @@ fn glob_matches(pattern: &string, key: &string) -> bool {
     return true;
 }
 
-fn apply_keys(store: &Store, pattern: string?) -> string {
+extern<Store> {
+    pub fn list_keys(self: &Store, pattern: string?) -> string[] {
+        return collect_keys(self, pattern);
+    }
+
+    pub fn hold_count(self: &Store, client_id: &string) -> HoldCount {
+        let (owned, borrowed) = count_holds(self, client_id);
+        return HoldCount { owned = owned, borrowed = borrowed };
+    }
+}
+
+fn collect_keys(store: &Store, pattern: string?) -> string[] {
     let mut keys: string[] = store.entries.keys();
     let mut filtered: string[] = [];
     let mut use_pattern: bool = false;
@@ -163,7 +174,12 @@ fn apply_keys(store: &Store, pattern: string?) -> string {
     }
 
     sort_strings(&mut filtered);
-    return list_line(&filtered);
+    return filtered;
+}
+
+fn apply_keys(store: &Store, pattern: string?) -> string {
+    let keys: string[] = collect_keys(store, pattern);
+    return proto.format_list(&keys);
 }
 
 fn apply_ping() -> string {

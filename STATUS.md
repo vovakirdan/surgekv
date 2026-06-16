@@ -14,7 +14,7 @@ Implemented pieces:
 - `config/`: CLI configuration parser powered by the `sigil` module
 - `manager/`: state-manager actor task that owns the store and processes command messages
 - `expiry/`: background expiry task that periodically asks the state manager to prune expired leases
-- `server/`: TCP listener plus client worker tasks that process multiple connections concurrently
+- `server/`: TCP listener plus client worker tasks that route key commands across state-manager shards
 - `main.sg`: thin `@entrypoint("argv")` bootstrap
 
 ## Implemented Commands
@@ -64,7 +64,10 @@ The current engine already enforces the core ownership model:
 - lease TTL values are stored, returned in responses, and expired by a background worker
 - command handling also keeps a lazy expiry pass as a safety net before applying each command
 - TTL deadlines use monotonic millisecond timestamps stored as `int64`
-- the `Store` is now owned by a single state-manager task instead of being mutated directly by the TCP loop
+- each shard keeps an expiry index of lease deadlines, so expiry no longer scans every stored key
+- each `Store` shard is owned by its state-manager task instead of being mutated directly by the TCP loop
+- key-scoped commands are routed to deterministic state-manager shards with `stdlib/hash`
+- `WHOAMI`, `KEYS`, `Disconnect`, and expiry ticks aggregate or broadcast across shards
 - accepted TCP clients are handed to a worker pool, so one idle connection should not block other clients
 - the expiry worker sends best-effort prune requests through the same manager queue, so it cannot mutate state concurrently with commands
 
@@ -74,7 +77,7 @@ Start the server:
 
 ```bash
 cd surgekv
-surge run . -- --port 7400
+surge run . -- --port 7400 --shards 4
 ```
 
 Connect from another terminal:
@@ -121,19 +124,18 @@ surge build .
 
 The server should also be smoke-tested end-to-end in an environment that permits loopback TCP listeners:
 
-- `surge run . -- --port <port>`
-- `./target/debug/surgekv --port <port>`
+- `surge run . -- --port <port> --shards 4`
+- `./target/debug/surgekv --port <port> --shards 4`
 - `./scripts/concurrency_smoke.sh [port]`
 
 ## Known Limitations
 
 The current server is intentionally small:
 
-- one in-process store
-- one state-manager task
-- one listener
-- no shard manager tasks yet
-- expiry still does a full store scan instead of using an expiry index
+- one in-process sharded store
+- one listener process
+- disconnect cleanup still scans the affected shard stores instead of using a reverse client-to-key index
+- the expiry index uses lazy stale-record cleanup rather than a heap or delete-aware priority queue
 - no authentication
 - no persistence
 - `KEYS` currently supports `*` glob matching only
@@ -154,7 +156,6 @@ There is no current compiler blocker for the implemented worker-pool server slic
 
 The most reasonable next steps for `surgekv` are:
 
-1. split the single state manager into shard manager tasks
-2. replace full-scan expiry with an expiry index owned by each state manager
-3. add targeted manual/runtime tests for multi-client behavior once the local environment can run TCP listeners
-4. expand pattern support beyond simple `*` matching only if it is still worth the complexity
+1. add broader multi-client runtime tests for cross-shard disconnect and aggregate metadata
+2. add a reverse client-to-key index if disconnect cleanup becomes too costly
+3. expand pattern support beyond simple `*` matching only if it is still worth the complexity

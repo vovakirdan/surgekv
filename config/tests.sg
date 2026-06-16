@@ -9,6 +9,7 @@ import stdlib/directives/test;
 ///     ConfigOk(cfg) => {
 ///         test.eq::<uint>(cfg.port, 7379:uint);
 ///         test.eq::<uint>(cfg.worker_count, 8:uint);
+///         test.eq::<uint>(cfg.shard_count, 8:uint);
 ///         test.eq::<uint>(cfg.expiry_interval_ms, 1000:uint);
 ///     }
 ///     finally => {
@@ -17,11 +18,12 @@ import stdlib/directives/test;
 /// };
 ///
 /// Flags:
-/// let args: string[] = ["--port", "7400", "--workers=2", "--read-cap", "2048", "--state-queue", "8", "--client-queue", "9", "--expiry-interval-ms", "250"];
+/// let args: string[] = ["--port", "7400", "--workers=2", "--shards", "3", "--read-cap", "2048", "--state-queue", "8", "--client-queue", "9", "--expiry-interval-ms", "250"];
 /// compare parse(args) {
 ///     ConfigOk(cfg) => {
 ///         test.eq::<uint>(cfg.port, 7400:uint);
 ///         test.eq::<uint>(cfg.worker_count, 2:uint);
+///         test.eq::<uint>(cfg.shard_count, 3:uint);
 ///         test.eq::<uint>(cfg.read_cap, 2048:uint);
 ///         test.eq::<uint>(cfg.state_queue_cap, 8:uint);
 ///         test.eq::<uint>(cfg.client_queue_cap, 9:uint);
@@ -48,6 +50,17 @@ import stdlib/directives/test;
 /// compare parse(args) {
 ///     ConfigError(message) => {
 ///         test.eq::<string>(message, "workers must be greater than zero");
+///     }
+///     finally => {
+///         test.assert(false);
+///     }
+/// };
+///
+/// InvalidShardCount:
+/// let args: string[] = ["--shards", "0"];
+/// compare parse(args) {
+///     ConfigError(message) => {
+///         test.eq::<string>(message, "shards must be greater than zero");
 ///     }
 ///     finally => {
 ///         test.assert(false);
