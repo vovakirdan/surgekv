@@ -232,6 +232,11 @@ Multiple clients holding `BORROW` on the same key read concurrently with no seri
 
 ## 7. Architecture
 
+For the current implementation details and the known client-worker limitation,
+see [ARCHITECTURE.md](ARCHITECTURE.md). This README section is the high-level
+design overview and may lag behind implementation details while the server
+model is still evolving.
+
 ### 7.1 Task layout
 
 ```
