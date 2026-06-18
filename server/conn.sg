@@ -13,6 +13,7 @@ fn append_string_bytes(out: &mut byte[], s: string) -> nothing {
 
 fn line_bytes(line: string) -> byte[] {
     let mut out: byte[] = [];
+    out.reserve(line.__len() + 1:uint);
     append_string_bytes(&mut out, line);
     out.push(10:byte);
     return out;

@@ -30,6 +30,13 @@ fn apply_set(store: &mut Store, client_id: &string, key: &string, value: string)
     };
 }
 
+extern<Store> {
+    pub fn write_value(self: &mut Store, client_id: &string, key: &string, value: string) -> string {
+        prune_expired_if_needed(self);
+        return apply_set(self, client_id, key, value);
+    }
+}
+
 fn apply_set_if(store: &mut Store, client_id: &string, key: &string, value: string, expected: uint) -> string {
     compare store.entries.get_mut(key) {
         Some(entry) => {

@@ -24,11 +24,20 @@ SURGEKV_BENCH_OPS="ping get set mixed" \
 ```
 
 The default report path is `benchmarks/latest-local.md`.
+The current single-thread comparison report is
+`benchmarks/latest-local-threads1.md`.
+The current eight-thread comparison report is
+`benchmarks/latest-local-threads8.md`.
 
 ## Reading Results
 
 Each row uses one persistent TCP connection per logical client. `mixed`
 alternates `SET` and `GET` across the configured key space.
+
+Rows with non-zero `errors` are still written. If a target fails before the
+timed run, for example during preload, the harness writes a failure row with
+`errors=requests` and zero latency values. That keeps process-level degradation
+visible in the table instead of hiding later rows.
 
 The first numbers to watch are:
 
@@ -38,7 +47,18 @@ The first numbers to watch are:
 
 ## Current Gaps
 
+- Surge runtime/server overhead still dominates local latency versus
+  Redis/Valkey, so short reports are bottleneck-finding data rather than final
+  throughput claims.
+- Default `surgekv`, `SURGE_THREADS=1`, and `SURGE_THREADS=8` complete the
+  current 32-client stateful matrix with zero errors.
+- `SURGE_THREADS=8` is currently the best local mode for stateful rows, around
+  `4.7-5.3k rps`; Redis/Valkey are still around `60-72k rps` on the same host.
+- The previous smallest confirmed trigger was short-lived connection churn plus
+  synchronous disconnect cleanup fanout; current `surgekv` has moved that
+  cleanup off the socket hot path.
+- Clean LLVM output now emits `rt_net_read_bytes`/`rt_net_write_bytes`, and
+  server `strace` shows bulk socket I/O.
 - The harness does not sample process RSS yet.
 - There is no long soak mode yet.
 - There are no protocol-specific ownership contention scenarios yet.
-- Redis/Valkey comparison requires their server binaries to be installed on the same host.

@@ -1,3 +1,5 @@
+//go:build ignore
+
 package main
 
 import (
@@ -149,11 +151,15 @@ func prepareData(cfg config, keys []string, value string) error {
 	defer c.conn.Close()
 
 	for _, key := range keys {
+		// Preload is outside the timed run, but it must still be bounded so a
+		// wedged server becomes a benchmark error instead of a stuck script.
+		c.conn.SetDeadline(time.Now().Add(cfg.timeout))
 		if cfg.target == "surgekv" {
 			if err := c.surgeCommand("NEW " + key + " " + value); err != nil {
 				if !strings.Contains(err.Error(), "ERROR EXISTS") {
 					return err
 				}
+				c.conn.SetDeadline(time.Now().Add(cfg.timeout))
 				if err := c.surgeCommand("SET " + key + " " + value); err != nil {
 					return err
 				}

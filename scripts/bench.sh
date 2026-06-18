@@ -161,6 +161,14 @@ run_row() {
         -format markdown
 }
 
+write_failure_row() {
+    local target="$1"
+    local op="$2"
+    local clients="$3"
+    printf '| %s | %s | %s | %s | %s | %s | 0 | 0 | 0 | 0 | 0 | %s |\n' \
+        "$target" "$op" "$clients" "$REQUESTS" "$KEYS" "$VALUE_BYTES" "$REQUESTS"
+}
+
 write_header() {
     local targets="$1"
     mkdir -p "$(dirname "$REPORT")"
@@ -206,7 +214,8 @@ append_notes() {
         echo "- The benchmark client uses one persistent TCP connection per logical client."
         echo '- `mixed` alternates SET and GET over the same key space.'
         echo "- The script starts isolated local Redis/Valkey processes only when their server binaries are installed."
-        echo "- Current local numbers are strongly shaped by Surge runtime network polling; default multi-worker runs show roughly 50 ms per single-client request on this host."
+        echo "- Rows with non-zero errors are still recorded so partial capacity failures stay visible."
+        echo "- Rows with rps/latency set to 0 and errors=requests failed before the timed run, usually during preload."
         if [[ -n "$skipped" ]]; then
             echo "- Skipped targets: $skipped."
         fi
@@ -218,7 +227,6 @@ append_notes() {
         echo "- Add hot-key contention runs with OWN/BORROW/RELEASE traffic."
         echo "- Add disconnect-churn runs to quantify O(entries) cleanup cost."
         echo "- Add TTL churn runs to measure stale expiry-record cleanup."
-        echo "- Compare against Redis/Valkey on the same host once those binaries are installed."
     } >>"$REPORT"
 }
 
@@ -257,7 +265,17 @@ for target in $targets; do
     for op in $OPS; do
         for clients in $CLIENTS; do
             echo "bench: target=$target op=$op clients=$clients requests=$REQUESTS"
-            run_row "$target" "$op" "$clients" >>"$REPORT"
+            row_out="$tmp_dir/row-${target}-${op}-${clients}.md"
+            if run_row "$target" "$op" "$clients" >"$row_out"; then
+                cat "$row_out" >>"$REPORT"
+            else
+                if [[ -s "$row_out" ]]; then
+                    cat "$row_out" >>"$REPORT"
+                else
+                    write_failure_row "$target" "$op" "$clients" >>"$REPORT"
+                fi
+                echo "bench: row completed with errors; continuing so the report keeps comparison data" >&2
+            fi
         done
     done
 done

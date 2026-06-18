@@ -1,11 +1,14 @@
 pragma module;
 
 pub tag Apply(string, proto.Command, Channel<string>);
+pub tag Cleanup(string);
 pub tag Expire();
+pub tag GetValue(string, Channel<string>);
 pub tag Holds(string, Channel<state.HoldCount>);
 pub tag Keys(string?, Channel<string[]>);
+pub tag SetValue(string, string, string, Channel<string>);
 
-pub type Message = Apply(string, proto.Command, Channel<string>) | Expire() | Holds(string, Channel<state.HoldCount>) | Keys(string?, Channel<string[]>);
+pub type Message = Apply(string, proto.Command, Channel<string>) | Cleanup(string) | Expire() | GetValue(string, Channel<string>) | Holds(string, Channel<state.HoldCount>) | Keys(string?, Channel<string[]>) | SetValue(string, string, string, Channel<string>);
 
 @copy
 pub type Handle = {

@@ -139,6 +139,11 @@ fn glob_matches(pattern: &string, key: &string) -> bool {
 }
 
 extern<Store> {
+    pub fn read_value(self: &mut Store, key: &string) -> string {
+        prune_expired_if_needed(self);
+        return apply_get(self, key);
+    }
+
     pub fn list_keys(self: &Store, pattern: string?) -> string[] {
         return collect_keys(self, pattern);
     }

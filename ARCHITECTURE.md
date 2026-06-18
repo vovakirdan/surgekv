@@ -50,6 +50,7 @@ flowchart LR
 
     subgraph Background["background tasks"]
         Expiry["expiry.run"]
+        Cleanup["cleanup_worker"]
     end
 
     Client["TCP client"] --> Listener
@@ -66,6 +67,9 @@ flowchart LR
     ShardN --> StoreN
     Expiry --> Shard0
     Expiry --> ShardN
+    ClientLoop -->|"enqueue client_id on close"| Cleanup
+    Cleanup --> Shard0
+    Cleanup --> ShardN
 ```
 
 ## Code Map
@@ -78,7 +82,7 @@ flowchart LR
 | Protocol | `proto/*` | Parse text commands and format text responses. |
 | State managers | `manager/*` | Own shard request channels and run one task per state shard. |
 | KV state | `state/*` | Store entries, ownership, borrows, versions, seal state, and expiry index. |
-| Expiry | `expiry/run.sg` | Periodically ask all state managers to prune expired leases. |
+| Background workers | `server/serve.sg`, `expiry/run.sg` | Queue disconnect cleanup and periodically ask state managers to prune expired leases. |
 
 ## Request Flow
 
@@ -96,8 +100,8 @@ sequenceDiagram
     Worker->>Proto: parse_line
     Proto-->>Worker: Command
     Worker->>Router: router_response client_id command
-    Router->>Manager: Apply client_id command reply_channel
-    Manager->>Store: apply command
+    Router->>Manager: SetValue/GetValue or Apply with reply_channel
+    Manager->>Store: apply command or hot-path method
     Store-->>Manager: response text
     Manager-->>Router: reply_channel response
     Router-->>Worker: response text
@@ -106,7 +110,8 @@ sequenceDiagram
 
 Every command is executed as a text request and text response. The state manager
 does not expose shared mutable state to the TCP layer; it receives messages
-through a channel and replies through a per-request reply channel.
+through a channel. Key-scoped socket commands reuse one reply channel per client
+task; aggregate/global paths still allocate short-lived reply channels.
 
 ## Connection Model
 
@@ -121,9 +126,10 @@ flowchart TD
     G --> H["route commands to state shards"]
     H --> I{"socket closed?"}
     I -->|"no"| G
-    I -->|"yes"| J["broadcast Disconnect"]
-    J --> K["send completion signal"]
-    K --> L["close TcpConn"]
+    I -->|"yes"| J["close TcpConn"]
+    J --> K["enqueue client_id cleanup"]
+    K --> L["send completion signal"]
+    K --> M["cleanup worker broadcasts no-reply cleanup"]
 ```
 
 Operational consequences:
@@ -139,6 +145,10 @@ Operational consequences:
   server shutdown.
 - Completed clients send a lightweight completion message to the accept loop so
   the max-client slot can be reused.
+- On disconnect, the client task closes the socket and enqueues one cleanup
+  item. A cleanup worker fans out no-reply cleanup messages to the shards, so
+  short-lived connection churn no longer waits for every shard reply in the
+  socket task.
 
 ## State Sharding Model
 
@@ -246,21 +256,43 @@ number of pending expiry records in the shard.
 | Same key writes | Serialized by one shard | Required for ownership and version correctness. |
 | Different key writes | Parallel across shards | Depends on key distribution and shard count. |
 | Expiry | One periodic background task | Sends non-blocking expire messages to shards. |
-| Disconnect cleanup | Full scan per shard | Acceptable for v1; reverse index is a future optimization. |
-| Runtime networking | Surge stdlib/runtime path | Current local benchmark latency is dominated by runtime network polling and byte-oriented stdlib I/O. |
+| Disconnect cleanup | Queued worker broadcasts no-reply cleanup to all shards, then each shard scans its store | Correct and no longer on the socket hot path; reverse index can reduce scan cost later. |
+| Runtime networking | Surge stdlib/runtime path | Bulk socket I/O is verified; remaining benchmark work is throughput and tail-latency profiling. |
 
 ## Next Hardening Work
 
-Before serious load testing, the highest-value hardening work is:
+The latest benchmark pass keeps the state architecture intact. Disconnect
+cleanup is off client socket tasks, key-scoped commands avoid per-request reply
+channel allocation, and the upstream runtime/network regressions are fixed
+locally.
 
-1. Add protocol-level rejection for over-limit connections if backlog waiting is not desirable.
-2. Add completed-client task pruning if churn makes task-handle retention too
+Current evidence:
+
+1. Default `SURGE_THREADS`, `SURGE_THREADS=1`, and `SURGE_THREADS=8` complete
+   the current 32-client `GET`/`SET`/`mixed` reports with zero errors.
+2. Clean LLVM output for `surgekv` calls `rt_net_read_bytes` and
+   `rt_net_write_bytes`; server `strace` shows bulk socket reads and writes.
+3. `SURGE_THREADS=8` is the best local stateful mode so far, around `4.7-5.3k`
+   rps for 32-client state commands.
+4. Redis and Valkey are still much faster, roughly `60-72k` rps in the same
+   local report, so the remaining work is still performance research.
+
+The highest-value hardening work is now:
+
+1. Isolate the remaining manager-channel hop cost with PING-only and state-path
+   microbenchmarks before changing server architecture.
+2. Evaluate a direct shared-state prototype only if profiling shows the actor hop
+   dominates enough to justify the correctness risk.
+3. Add targeted scenarios for disconnect churn, TTL churn, and hot-key
+   ownership contention.
+4. Add memory/RSS sampling and a longer soak mode to the benchmark harness.
+5. Add protocol-level rejection for over-limit connections if backlog waiting
+   is not desirable.
+6. Add completed-client task pruning if churn makes task-handle retention too
    costly before shutdown.
-3. Keep state managers unchanged; they are already the right serialization
-   boundary for correctness.
-4. Add a reverse client-to-key index if disconnect cleanup becomes too costly.
-5. Optimize or upstream-fix Surge networking before treating throughput numbers
-   as a state-engine ceiling.
+7. Keep state managers unchanged until runtime evidence points at the state
+   layer; they are still the right serialization boundary for correctness.
+8. Add a reverse client-to-key index if disconnect cleanup becomes too costly.
 
 After that, load tests should measure:
 

@@ -325,20 +325,21 @@ deadline no longer matches the entry's current `lease_deadline_ms`.
 
 ```
 surgekv/
-├── main.sg        # Entrypoint: parse flags, spawn Listener + Managers + Expiry
-├── proto.sg       # tag Command, parse_line(), format_response()
-├── state.sg       # State Manager task, Entry type, all ownership logic
-├── client.sg      # Client task, TCP read loop, routing to shard
-└── expiry.sg      # Expiry Worker task, tick loop
+├── main.sg          # Entrypoint: parse flags and start the server
+├── config/          # CLI parsing and ServerConfig defaults
+├── proto/           # Wire command parser and response formatting
+├── state/           # Entry state, ownership rules, writes, reads, expiry index
+├── manager/         # State-manager actor task and request messages
+├── server/          # TCP accept loop, client tasks, routing, line I/O
+├── expiry/          # Periodic lease-expiry worker
+├── deps/sigil/      # Local CLI parsing dependency
+├── scripts/         # Smoke tests and benchmark harness
+└── benchmarks/      # Local benchmark notes and reports
 ```
 
-### Recommended build order
-
-1. `proto.sg` — `tag Command`, parser, response formatter. Pure logic, no IO, easy to test.
-2. `state.sg` — `Entry` type, State Manager task. Core of the store. Test by sending messages directly.
-3. `client.sg` — TCP reader, command routing to correct shard. Wire proto and state together.
-4. `main.sg` — spawn everything, parse `--port` / `--shards` flags.
-5. `expiry.sg` — add TTL expiry last once everything else works.
+The implementation is no longer a scaffold. The current split keeps protocol,
+state, actor management, and TCP serving separate so each layer can be tested or
+benchmarked independently.
 
 ---
 
@@ -410,9 +411,24 @@ SURGEKV_BENCH_CLIENTS="1 8 32 128" \
 ./scripts/bench.sh
 ```
 
-Current local numbers are strongly shaped by the Surge runtime network polling
-path, so treat the benchmark as a regression and bottleneck finder until that
-runtime layer is optimized.
+Current local numbers are strongly shaped by Surge runtime/server overhead, so
+treat the benchmark as a regression and bottleneck finder until the remaining
+latency tails are understood.
+
+Current snapshot from 2026-06-18 with Surge `7f084eed392c`:
+
+- default mode completes the 32-client `GET`/`SET`/`mixed` stateful rows with
+  zero errors at roughly `3.4-4.0k rps`
+- `SURGE_THREADS=1` also completes with zero errors, but is slower for this
+  stateful workload at roughly `1.3-2.3k rps`
+- `SURGE_THREADS=8` is the best local mode so far at roughly `4.7-5.3k rps`
+- Redis and Valkey on the same host complete the same rows around `60-72k rps`
+  with much lower latency
+- clean LLVM output now calls `rt_net_read_bytes`/`rt_net_write_bytes`, and
+  server `strace` shows bulk socket reads and writes
+
+See `benchmarks/latest-local.md`, `benchmarks/latest-local-threads1.md`, and
+`benchmarks/latest-local-threads8.md` for the current reports.
 
 ---
 

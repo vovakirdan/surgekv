@@ -10,6 +10,16 @@ fn current_now_ms(store: &Store) -> int64 {
     };
 }
 
+fn prune_expired_if_needed(store: &mut Store) -> nothing {
+    if store.expiry_index.__len() == 0:uint {
+        return nothing;
+    }
+
+    let now_ms: int64 = current_now_ms(store);
+    prune_expired(store, now_ms);
+    return nothing;
+}
+
 fn test_set_now_ms(store: &mut Store, now_ms: int64?) -> nothing {
     store.test_now_ms = now_ms;
     return nothing;

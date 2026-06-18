@@ -5,13 +5,16 @@ fn print_listen_banner(port: uint) -> nothing {
     return nothing;
 }
 
-async fn serve_client(conn: TcpConn, router: ShardRouter, client_id: string, read_cap: uint) -> nothing {
+async fn serve_client(conn: TcpConn, router: ShardRouter, client_id: string, read_cap: uint, cleanup_clients: Channel<string>) -> nothing {
     let mut buffer: string = "";
+    // A socket task processes one request at a time, so key-scoped commands can
+    // reuse a single manager reply channel for the whole client lifetime.
+    let state_reply = make_channel::<string>(1:uint);
 
     while true {
         compare take_next_line(&mut buffer) {
             Some(line) => {
-                let response: string = response_for_line(&router, &client_id, &line);
+                let response: string = response_for_line(&router, &client_id, &line, state_reply);
                 let data: byte[] = line_bytes(response);
                 let write_res = net.write_all(&conn, data).await();
                 let ok: bool = compare write_res {
@@ -58,19 +61,19 @@ async fn serve_client(conn: TcpConn, router: ShardRouter, client_id: string, rea
         };
     }
 
-    let _ = router_disconnect(&router, &client_id);
     let _ = net.close_conn(own conn);
+    cleanup_clients.send(own client_id);
     return nothing;
 }
 
-async fn serve_client_handle(handle: int, router: ShardRouter, client_id: string, read_cap: uint) -> nothing {
+async fn serve_client_handle(handle: int, router: ShardRouter, client_id: string, read_cap: uint, cleanup_clients: Channel<string>) -> nothing {
     let conn: TcpConn = { __opaque = handle };
-    let _ = serve_client(conn, router, client_id, read_cap).await();
+    let _ = serve_client(conn, router, client_id, read_cap, cleanup_clients).await();
     return nothing;
 }
 
-async fn serve_client_limited(handle: int, router: ShardRouter, client_id: string, read_cap: uint, completed: Channel<uint>, track_completion: bool) -> nothing {
-    let _ = serve_client_handle(handle, router, client_id, read_cap).await();
+async fn serve_client_limited(handle: int, router: ShardRouter, client_id: string, read_cap: uint, cleanup_clients: Channel<string>, completed: Channel<uint>, track_completion: bool) -> nothing {
+    let _ = serve_client_handle(handle, router, client_id, read_cap, cleanup_clients).await();
     if track_completion {
         let _ = completed.try_send(1:uint);
     }
@@ -106,7 +109,22 @@ fn drain_completed_clients(completed: &Channel<uint>, active_clients: uint) -> u
     return active;
 }
 
-async fn serve_worker(clients: Channel<AcceptedClient>, router: ShardRouter, read_cap: uint, completed: Channel<uint>, track_completion: bool) -> nothing {
+async fn cleanup_worker(cleanups: Channel<string>, router: ShardRouter) -> nothing {
+    let mut done: bool = false;
+    while !done {
+        compare cleanups.recv() {
+            Some(client_id) => {
+                router_cleanup_client(&router, &client_id);
+            }
+            nothing => {
+                done = true;
+            }
+        };
+    }
+    return nothing;
+}
+
+async fn serve_worker(clients: Channel<AcceptedClient>, router: ShardRouter, read_cap: uint, cleanup_clients: Channel<string>, completed: Channel<uint>, track_completion: bool) -> nothing {
     // Workers are dispatchers: they keep accepting queued clients and give each
     // socket its own task. A single idle TCP session must not occupy the worker.
     let mut client_tasks: Task<nothing>[] = [];
@@ -115,7 +133,8 @@ async fn serve_worker(clients: Channel<AcceptedClient>, router: ShardRouter, rea
         compare clients.recv() {
             Some(client) => {
                 let client_router = clone_router(&router);
-                let task = spawn serve_client_limited(client.handle, client_router, client.client_id, read_cap, completed, track_completion);
+                let client_cleanup = cleanup_clients;
+                let task = spawn serve_client_limited(client.handle, client_router, client.client_id, read_cap, client_cleanup, completed, track_completion);
                 client_tasks.push(task);
             }
             nothing => {
@@ -155,6 +174,11 @@ pub async fn serve(cfg: config.ServerConfig) -> int {
             let mut next_id: uint = 1:uint;
             let read_cap: uint = cfg.read_cap;
             let clients = make_channel::<AcceptedClient>(cfg.client_queue_cap);
+            // ponytail: reuse client queue capacity; add a cleanup-specific cap
+            // only if disconnect backpressure shows up in benchmarks.
+            let cleanup_clients = make_channel::<string>(cfg.client_queue_cap);
+            let cleanup_router = clone_router(&router);
+            let cleanup_task = spawn cleanup_worker(cleanup_clients, cleanup_router);
             let completed_clients = make_channel::<uint>(completion_channel_cap(cfg.max_clients));
             let track_clients: bool = cfg.max_clients != 0:uint;
             let mut active_clients: uint = 0:uint;
@@ -164,9 +188,10 @@ pub async fn serve(cfg: config.ServerConfig) -> int {
             let mut worker_idx: uint = 0:uint;
             while worker_idx < worker_count {
                 let worker_clients = clients;
+                let worker_cleanup = cleanup_clients;
                 let worker_completed = completed_clients;
                 let worker_router = clone_router(&router);
-                let worker = spawn serve_worker(worker_clients, worker_router, read_cap, worker_completed, track_clients);
+                let worker = spawn serve_worker(worker_clients, worker_router, read_cap, worker_cleanup, worker_completed, track_clients);
                 workers.push(worker);
                 worker_idx = worker_idx + 1:uint;
             }
@@ -207,6 +232,8 @@ pub async fn serve(cfg: config.ServerConfig) -> int {
                                     let worker = workers.pop().safe();
                                     let _ = worker.await();
                                 }
+                                cleanup_clients.close();
+                                let _ = cleanup_task.await();
                                 stop_shards(&router);
                                 while state_tasks.__len() != 0:uint {
                                     let state_task = state_tasks.pop().safe();
@@ -226,6 +253,8 @@ pub async fn serve(cfg: config.ServerConfig) -> int {
                             let worker = workers.pop().safe();
                             let _ = worker.await();
                         }
+                        cleanup_clients.close();
+                        let _ = cleanup_task.await();
                         stop_shards(&router);
                         while state_tasks.__len() != 0:uint {
                             let state_task = state_tasks.pop().safe();

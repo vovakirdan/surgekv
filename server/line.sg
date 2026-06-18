@@ -32,10 +32,10 @@ fn take_next_line(buffer: &mut string) -> string? {
     return Some(line);
 }
 
-fn response_for_line(router: &ShardRouter, client_id: &string, line: &string) -> string {
+fn response_for_line(router: &ShardRouter, client_id: &string, line: &string, state_reply: Channel<string>) -> string {
     compare proto.parse_line(line) {
         Success(cmd) => {
-            return router_response(router, client_id, cmd);
+            return router_response(router, client_id, cmd, state_reply);
         }
         err => {
             return proto.format_parse_error(&err);

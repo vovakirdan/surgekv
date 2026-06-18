@@ -16,8 +16,15 @@ pub async fn run(requests: Channel<Message>) -> nothing {
                         let response: string = store.apply(&client_id, cmd);
                         reply.send(own response);
                     }
+                    Cleanup(client_id) => {
+                        let _ = store.apply(&client_id, proto.Disconnect());
+                    }
                     Expire() => {
                         store.expire();
+                    }
+                    GetValue(key, reply) => {
+                        let response: string = store.read_value(&key);
+                        reply.send(own response);
                     }
                     Holds(client_id, reply) => {
                         let counts: state.HoldCount = store.hold_count(&client_id);
@@ -26,6 +33,10 @@ pub async fn run(requests: Channel<Message>) -> nothing {
                     Keys(pattern, reply) => {
                         let keys: string[] = store.list_keys(pattern);
                         reply.send(own keys);
+                    }
+                    SetValue(client_id, key, value, reply) => {
+                        let response: string = store.write_value(&client_id, &key, value);
+                        reply.send(own response);
                     }
                 };
             }
@@ -46,7 +57,31 @@ pub fn open(capacity: uint) -> Handle {
 extern<Handle> {
     pub fn apply(self: &Handle, client_id: &string, cmd: proto.Command) -> string {
         let reply = make_channel::<string>(1:uint);
+        return self.apply_with_reply(client_id, cmd, reply);
+    }
+
+    pub fn apply_with_reply(self: &Handle, client_id: &string, cmd: proto.Command, reply: Channel<string>) -> string {
         let request: Message = Apply(client_id.__clone(), cmd, reply);
+        self.requests.send(own request);
+
+        return compare reply.recv() {
+            Some(response) => response;
+            nothing => stopped_response();
+        };
+    }
+
+    pub fn get_with_reply(self: &Handle, key: string, reply: Channel<string>) -> string {
+        let request: Message = GetValue(key, reply);
+        self.requests.send(own request);
+
+        return compare reply.recv() {
+            Some(response) => response;
+            nothing => stopped_response();
+        };
+    }
+
+    pub fn set_with_reply(self: &Handle, client_id: &string, key: string, value: string, reply: Channel<string>) -> string {
+        let request: Message = SetValue(client_id.__clone(), key, value, reply);
         self.requests.send(own request);
 
         return compare reply.recv() {
@@ -63,6 +98,14 @@ extern<Handle> {
     pub fn expire(self: &Handle) -> bool {
         let request: Message = Expire();
         return self.requests.try_send(own request);
+    }
+
+    pub fn cleanup_client(self: &Handle, client_id: &string) -> nothing {
+        // Disconnect cleanup is queued without a reply so socket tasks do not
+        // wait for every shard to answer on connection close.
+        let request: Message = Cleanup(client_id.__clone());
+        self.requests.send(own request);
+        return nothing;
     }
 
     pub fn holds(self: &Handle, client_id: &string) -> state.HoldCount {
