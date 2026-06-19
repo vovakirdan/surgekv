@@ -1,6 +1,5 @@
 pragma module;
 
-import stdlib/hash as hash;
 import stdlib/net as net;
 
 import ../config as config;

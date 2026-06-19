@@ -1,0 +1,7 @@
+[package]
+name = "server_probe"
+root = "."
+version = "0.1.0"
+
+[run]
+main = "main.sg"

@@ -21,3 +21,9 @@ import stdlib/directives/test;
 /// ParseErrorFormatting:
 /// let bad = compare proto.parse_line(&"BOOM") { Success(_) => "missing"; err => proto.format_parse_error(&err); };
 /// test.assert(bad.starts_with("ERROR BAD_CMD"));
+///
+/// ShardBucketIsStableAndBounded:
+/// test.eq::<uint>(shard_bucket_for_key(&"", 8:uint), 0:uint);
+/// test.eq::<uint>(shard_bucket_for_key(&"key-42", 8:uint), 4:uint);
+/// test.eq::<uint>(shard_bucket_for_key(&"key-43", 8:uint), 5:uint);
+/// test.assert(shard_bucket_for_key(&"anything", 0:uint) == 0:uint);

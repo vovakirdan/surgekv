@@ -1,0 +1,265 @@
+pragma module;
+
+import stdlib/time as time;
+import ../../manager as manager;
+import ../../proto as proto;
+import ../../state as state;
+
+fn elapsed_us(start: time.Duration) -> int64 {
+    let now = time.monotonic_now();
+    let elapsed = now.sub(start);
+    return elapsed.as_micros();
+}
+
+fn print_header() -> nothing {
+    print("| probe | iterations | total us | ns/op |");
+    print("| --- | ---: | ---: | ---: |");
+    return nothing;
+}
+
+fn print_row(name: &string, iterations: int, total_us: int64) -> nothing {
+    let ns_op: int64 = (total_us * (1000):int64) / (iterations to int64);
+    print("| " + *name + " | " + (iterations to string) + " | " + (total_us to string) + " | " + (ns_op to string) + " |");
+    return nothing;
+}
+
+fn seed_store() -> state.Store {
+    let mut store = state.new();
+    let _ = store.apply(&"client-a", proto.New("key-42", "{\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"));
+    return store;
+}
+
+fn bench_direct_get(iterations: int) -> nothing {
+    let mut store = seed_store();
+    let key: string = "key-42";
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let response: string = store.read_value(&key);
+        total = total + response.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"direct_store_get", iterations, total_us);
+    return nothing;
+}
+
+fn bench_direct_set(iterations: int) -> nothing {
+    let mut store = seed_store();
+    let client_id: string = "client-a";
+    let key: string = "key-42";
+    let value: string = "{\"v\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\"}";
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let response: string = store.write_value(&client_id, &key, value.__clone());
+        total = total + response.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"direct_store_set", iterations, total_us);
+    return nothing;
+}
+
+fn bench_apply_get(iterations: int) -> nothing {
+    let mut store = seed_store();
+    let client_id: string = "client-a";
+    let key: string = "key-42";
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let response: string = store.apply(&client_id, proto.Get(key.__clone()));
+        total = total + response.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"direct_apply_get", iterations, total_us);
+    return nothing;
+}
+
+fn bench_apply_set(iterations: int) -> nothing {
+    let mut store = seed_store();
+    let client_id: string = "client-a";
+    let key: string = "key-42";
+    let value: string = "{\"v\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\"}";
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let response: string = store.apply(&client_id, proto.Set(key.__clone(), value.__clone()));
+        total = total + response.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"direct_apply_set", iterations, total_us);
+    return nothing;
+}
+
+async fn bench_manager_get(iterations: int) -> nothing {
+    let handle = manager.open(64:uint);
+    let requests = handle.requests;
+    let state_task = spawn manager.run(requests);
+    let reply = make_channel::<string>(1:uint);
+    let key: string = "key-42";
+    let seed: manager.Message = manager.Apply("client-a", proto.New(key.__clone(), "{\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"), reply);
+    requests.send(own seed);
+    let _ = reply.recv();
+
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let request: manager.Message = manager.GetValue(key.__clone(), reply);
+        requests.send(own request);
+        let response: string = compare reply.recv() {
+            Some(value) => value;
+            nothing => "ERROR stopped";
+        };
+        total = total + response.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"manager_get_reused_reply", iterations, total_us);
+    requests.close();
+    let _ = state_task.await();
+    return nothing;
+}
+
+async fn bench_manager_set(iterations: int) -> nothing {
+    let handle = manager.open(64:uint);
+    let requests = handle.requests;
+    let state_task = spawn manager.run(requests);
+    let reply = make_channel::<string>(1:uint);
+    let client_id: string = "client-a";
+    let key: string = "key-42";
+    let value: string = "{\"v\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\"}";
+    let seed: manager.Message = manager.Apply(client_id.__clone(), proto.New(key.__clone(), "{\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"), reply);
+    requests.send(own seed);
+    let _ = reply.recv();
+
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let request: manager.Message = manager.SetValue(client_id.__clone(), key.__clone(), value.__clone(), reply);
+        requests.send(own request);
+        let response: string = compare reply.recv() {
+            Some(value) => value;
+            nothing => "ERROR stopped";
+        };
+        total = total + response.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"manager_set_reused_reply", iterations, total_us);
+    requests.close();
+    let _ = state_task.await();
+    return nothing;
+}
+
+async fn bench_manager_apply_get(iterations: int) -> nothing {
+    let handle = manager.open(64:uint);
+    let requests = handle.requests;
+    let state_task = spawn manager.run(requests);
+    let reply = make_channel::<string>(1:uint);
+    let client_id: string = "client-a";
+    let key: string = "key-42";
+    let seed: manager.Message = manager.Apply(client_id.__clone(), proto.New(key.__clone(), "{\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"), reply);
+    requests.send(own seed);
+    let _ = reply.recv();
+
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let request: manager.Message = manager.Apply(client_id.__clone(), proto.Get(key.__clone()), reply);
+        requests.send(own request);
+        let response: string = compare reply.recv() {
+            Some(value) => value;
+            nothing => "ERROR stopped";
+        };
+        total = total + response.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"manager_apply_get_reused_reply", iterations, total_us);
+    requests.close();
+    let _ = state_task.await();
+    return nothing;
+}
+
+async fn bench_manager_apply_set(iterations: int) -> nothing {
+    let handle = manager.open(64:uint);
+    let requests = handle.requests;
+    let state_task = spawn manager.run(requests);
+    let reply = make_channel::<string>(1:uint);
+    let client_id: string = "client-a";
+    let key: string = "key-42";
+    let value: string = "{\"v\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\"}";
+    let seed: manager.Message = manager.Apply(client_id.__clone(), proto.New(key.__clone(), "{\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"), reply);
+    requests.send(own seed);
+    let _ = reply.recv();
+
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let request: manager.Message = manager.Apply(client_id.__clone(), proto.Set(key.__clone(), value.__clone()), reply);
+        requests.send(own request);
+        let response: string = compare reply.recv() {
+            Some(value) => value;
+            nothing => "ERROR stopped";
+        };
+        total = total + response.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"manager_apply_set_reused_reply", iterations, total_us);
+    requests.close();
+    let _ = state_task.await();
+    return nothing;
+}
+
+@entrypoint
+fn main() -> int {
+    // Keep this probe tiny: it measures only state code and channel handoff,
+    // without sockets, request parsing, or JSON validation.
+    let iterations: int = 50000;
+    print_header();
+    bench_direct_get(iterations);
+    bench_direct_set(iterations);
+    bench_apply_get(iterations);
+    bench_apply_set(iterations);
+    let _ = bench_manager_get(iterations).await();
+    let _ = bench_manager_set(iterations).await();
+    let _ = bench_manager_apply_get(iterations).await();
+    let _ = bench_manager_apply_set(iterations).await();
+    return 0;
+}

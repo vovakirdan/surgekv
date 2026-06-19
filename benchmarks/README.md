@@ -6,6 +6,8 @@ The harness is intentionally small:
 
 - `scripts/bench_load.go` is a dependency-free TCP load client.
 - `scripts/bench.sh` builds `surgekv`, starts an isolated server, runs a short matrix, and writes a markdown report.
+- `benchmarks/state_probe` isolates direct `Store` work from the manager channel hop.
+- `benchmarks/server_probe` isolates line parsing, shard routing, response bytes, and protocol pipeline cost.
 - Redis and Valkey are included automatically when `redis-server` or `valkey-server` are installed.
 
 Run the default local matrix:
@@ -28,6 +30,12 @@ The current single-thread comparison report is
 `benchmarks/latest-local-threads1.md`.
 The current eight-thread comparison report is
 `benchmarks/latest-local-threads8.md`.
+The current runtime-layer summary is `benchmarks/runtime-layer-findings.md`.
+The focused state and server primitive reports are
+`benchmarks/state-probe.md` and `benchmarks/server-probe.md`.
+The routing-fix TCP comparison reports are
+`benchmarks/research-hashfix-threads1.md` and
+`benchmarks/research-hashfix-threads8.md`.
 
 ## Reading Results
 

@@ -47,20 +47,31 @@ fn first_shard(router: &ShardRouter) -> Channel<manager.Message> {
     return router.shards[0];
 }
 
+fn shard_bucket_for_key(key: &string, shard_count: uint) -> uint {
+    if shard_count == 0:uint {
+        return 0:uint;
+    }
+
+    let view = key.bytes();
+    let length: int = view.__len() to int;
+    let mut bucket: uint = 0:uint;
+    let mut i: int = 0;
+    while i < length {
+        // ponytail: in-memory routing only; switch to stdlib when it has a
+        // short-string bucket helper cheap enough for per-request use; see
+        // vovakirdan/surge#144.
+        bucket = ((bucket * 131:uint) + ((view[i] to byte) to uint)) % shard_count;
+        i = i + 1;
+    }
+    return bucket;
+}
+
 fn shard_for_key(router: &ShardRouter, key: &string) -> Channel<manager.Message> {
     let shard_count: uint = router.shards.__len();
     if shard_count == 0:uint {
         return first_shard(router);
     }
-    let digest: hash.Hash64 = hash.stable64_string(key);
-    compare digest.bucket(shard_count) {
-        Some(index) => {
-            return router.shards[index to int];
-        }
-        nothing => {
-            return first_shard(router);
-        }
-    };
+    return router.shards[shard_bucket_for_key(key, shard_count) to int];
 }
 
 fn router_cleanup_client(router: &ShardRouter, client_id: &string) -> nothing {
