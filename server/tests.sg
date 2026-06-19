@@ -18,7 +18,6 @@ import stdlib/directives/test;
 /// test.eq::<string>(line3, "none");
 /// test.eq::<string>(buffer, "");
 ///
-/// ResponseForLineMapsParseErrors:
-/// let router = ShardRouter { shards = [] };
-/// let bad = response_for_line(&router, &"client-1", &"BOOM");
+/// ParseErrorFormatting:
+/// let bad = compare proto.parse_line(&"BOOM") { Success(_) => "missing"; err => proto.format_parse_error(&err); };
 /// test.assert(bad.starts_with("ERROR BAD_CMD"));

@@ -78,7 +78,7 @@ flowchart LR
 | --- | --- | --- |
 | Entrypoint and config | `main.sg`, `config/*` | Parse CLI flags and start `server.serve`. |
 | TCP server | `server/serve.sg`, `server/line.sg`, `server/ids.sg` | Accept sockets, assign client ids, read request lines, write response lines. |
-| Routing | `server/shards.sg` | Route keyed commands to one state shard; fan out global commands. |
+| Routing | `server/shards.sg` | Hold state-manager request channels, pick keyed shards, and support fan-out helpers. |
 | Protocol | `proto/*` | Parse text commands and format text responses. |
 | State managers | `manager/*` | Own shard request channels and run one task per state shard. |
 | KV state | `state/*` | Store entries, ownership, borrows, versions, seal state, and expiry index. |
@@ -99,12 +99,11 @@ sequenceDiagram
     Client->>Worker: SET key json
     Worker->>Proto: parse_line
     Proto-->>Worker: Command
-    Worker->>Router: router_response client_id command
-    Router->>Manager: SetValue/GetValue or Apply with reply_channel
+    Worker->>Router: shard_for_key or fan-out selection
+    Worker->>Manager: SetValue/GetValue or Apply with reply_channel
     Manager->>Store: apply command or hot-path method
     Store-->>Manager: response text
-    Manager-->>Router: reply_channel response
-    Router-->>Worker: response text
+    Manager-->>Worker: reply_channel response
     Worker-->>Client: OK version=N
 ```
 
