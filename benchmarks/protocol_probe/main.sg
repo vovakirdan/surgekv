@@ -1,0 +1,212 @@
+pragma module;
+
+import stdlib/time as time;
+import ../../proto as proto;
+
+fn elapsed_us(start: time.Duration) -> int64 {
+    let now = time.monotonic_now();
+    let elapsed = now.sub(start);
+    return elapsed.as_micros();
+}
+
+fn print_header() -> nothing {
+    print("| probe | iterations | total us | ns/op |");
+    print("| --- | ---: | ---: | ---: |");
+    return nothing;
+}
+
+fn print_row(name: &string, iterations: int, total_us: int64) -> nothing {
+    let ns_op: int64 = (total_us * (1000):int64) / (iterations to int64);
+    print("| " + *name + " | " + (iterations to string) + " | " + (total_us to string) + " | " + (ns_op to string) + " |");
+    return nothing;
+}
+
+fn command_weight(cmd: proto.Command) -> uint {
+    return compare cmd {
+        proto.Ping() => 1:uint;
+        proto.WhoAmI() => 1:uint;
+        proto.New(key, value) => key.__len() + value.__len();
+        proto.Get(key) => key.__len();
+        proto.Set(key, value) => key.__len() + value.__len();
+        proto.SetIf(key, value, expected) => key.__len() + value.__len() + expected;
+        proto.Del(key) => key.__len();
+        proto.Own(key, ttl) => {
+            ret compare ttl {
+                Some(value) => key.__len() + value;
+                nothing => key.__len();
+            };
+        }
+        proto.Borrow(key, ttl) => {
+            ret compare ttl {
+                Some(value) => key.__len() + value;
+                nothing => key.__len();
+            };
+        }
+        proto.Release(key) => key.__len();
+        proto.Seal(key) => key.__len();
+        proto.Stat(key) => key.__len();
+        proto.Keys(_) => 1:uint;
+        proto.Disconnect() => 1:uint;
+    };
+}
+
+fn bench_parse(name: &string, line: &string, iterations: int) -> nothing {
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        compare proto.parse_line(line) {
+            Success(cmd) => {
+                total = total + command_weight(cmd);
+            }
+            err => {
+                print(proto.format_parse_error(&err));
+                return nothing;
+            }
+        };
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(name, iterations, total_us);
+    return nothing;
+}
+
+fn bench_parse_mixed(iterations: int) -> nothing {
+    let get_line: string = "GET key-42";
+    let set_line: string = "SET key-42 {\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}";
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let line: string = compare i % 2 {
+            0 => get_line.__clone();
+            _ => set_line.__clone();
+        };
+        compare proto.parse_line(&line) {
+            Success(cmd) => {
+                total = total + command_weight(cmd);
+            }
+            err => {
+                print(proto.format_parse_error(&err));
+                return nothing;
+            }
+        };
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"parse_mixed_get_set", iterations, total_us);
+    return nothing;
+}
+
+fn append_string_bytes(out: &mut byte[], s: &string) -> nothing {
+    let view = s.bytes();
+    let length: int = view.__len() to int;
+    let mut i: int = 0;
+    while i < length {
+        out.push(view[i]);
+        i = i + 1;
+    }
+    return nothing;
+}
+
+fn line_bytes(line: &string) -> byte[] {
+    let mut out: byte[] = [];
+    out.reserve(line.__len() + 1:uint);
+    append_string_bytes(&mut out, line);
+    out.push(10:byte);
+    return out;
+}
+
+fn bench_format_value(iterations: int) -> nothing {
+    let value: string = "{\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}";
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let response = proto.format_value(&value);
+        total = total + response.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"format_value", iterations, total_us);
+    return nothing;
+}
+
+fn bench_format_ok(iterations: int) -> nothing {
+    let no_ttl: uint? = nothing;
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let response = proto.format_ok(Some(7:uint), no_ttl);
+        total = total + response.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"format_ok_version", iterations, total_us);
+    return nothing;
+}
+
+fn bench_format_error(iterations: int) -> nothing {
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let response = proto.format_error(&"BAD_CMD", &"unknown command");
+        total = total + response.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"format_error", iterations, total_us);
+    return nothing;
+}
+
+fn bench_line_bytes(iterations: int) -> nothing {
+    let response: string = "VALUE {\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}";
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let bytes = line_bytes(&response);
+        total = total + bytes.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"line_bytes_value", iterations, total_us);
+    return nothing;
+}
+
+@entrypoint
+fn main() -> int {
+    // ponytail: fixed iteration count is enough for trend checks; add CLI flags
+    // only when comparing many machines or CI profiles.
+    let iterations: int = 20000;
+    print_header();
+    bench_parse(&"parse_ping", &"PING", iterations);
+    bench_parse(&"parse_get", &"GET key-42", iterations);
+    bench_parse(&"parse_set", &"SET key-42 {\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}", iterations);
+    bench_parse_mixed(iterations);
+    bench_format_value(iterations);
+    bench_format_ok(iterations);
+    bench_format_error(iterations);
+    bench_line_bytes(iterations);
+    return 0;
+}
