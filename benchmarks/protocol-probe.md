@@ -5,22 +5,22 @@ Generated: 2026-06-19
 ## Environment
 
 - host: Linux DESKTOP-N3J9OLI WSL2
-- surge: `/usr/local/bin/surge` `0.1.10-dev` commit `b2abcf2c4360`
-- command: `PATH=/usr/local/bin:$PATH surge build --release benchmarks/protocol_probe && ./target/release/protocol_probe`
+- surge: `surge` `0.1.11-dev` commit `2c06665daab3`
+- command: `surge build --release benchmarks/protocol_probe && ./target/release/protocol_probe`
 - iterations per row: `20000`
 
 ## Results
 
 | probe | iterations | total us | ns/op |
 | --- | ---: | ---: | ---: |
-| parse_ping | 20000 | 166198 | 8309 |
-| parse_get | 20000 | 470117 | 23505 |
-| parse_set | 20000 | 4512700 | 225635 |
-| parse_mixed_get_set | 20000 | 2600949 | 130047 |
-| format_value | 20000 | 11897 | 594 |
-| format_ok_version | 20000 | 28049 | 1402 |
-| format_error | 20000 | 15179 | 758 |
-| line_bytes_value | 20000 | 498701 | 24935 |
+| parse_ping | 20000 | 195552 | 9777 |
+| parse_get | 20000 | 536806 | 26840 |
+| parse_set | 20000 | 5378020 | 268901 |
+| parse_mixed_get_set | 20000 | 2988554 | 149427 |
+| format_value | 20000 | 14511 | 725 |
+| format_ok_version | 20000 | 34077 | 1703 |
+| format_error | 20000 | 17845 | 892 |
+| line_bytes_value | 20000 | 608681 | 30434 |
 
 ## Notes
 
