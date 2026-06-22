@@ -1,0 +1,87 @@
+pragma module;
+
+import stdlib/json as json;
+import stdlib/time as time;
+
+fn elapsed_us(start: time.Duration) -> int64 {
+    let now = time.monotonic_now();
+    let elapsed = now.sub(start);
+    return elapsed.as_micros();
+}
+
+fn print_header() -> nothing {
+    print("| probe | iterations | total us | ns/op |");
+    print("| --- | ---: | ---: | ---: |");
+    return nothing;
+}
+
+fn print_row(name: &string, iterations: int, total_us: int64) -> nothing {
+    let ns_op: int64 = (total_us * (1000):int64) / (iterations to int64);
+    print("| " + *name + " | " + (iterations to string) + " | " + (total_us to string) + " | " + (ns_op to string) + " |");
+    return nothing;
+}
+
+fn bench_parse(name: &string, value: &string, iterations: int) -> nothing {
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        compare json.parse(value) {
+            Success(_) => {
+                total = total + value.__len();
+            }
+            err => {
+                print(err.message);
+                return nothing;
+            }
+        };
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(name, iterations, total_us);
+    return nothing;
+}
+
+fn bench_validate(name: &string, value: &string, iterations: int) -> nothing {
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        compare json.validate(value) {
+            Success(_) => {
+                total = total + value.__len();
+            }
+            err => {
+                print(err.message);
+                return nothing;
+            }
+        };
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(name, iterations, total_us);
+    return nothing;
+}
+
+@entrypoint
+fn main() -> int {
+    let iterations: int = 20000;
+    let scalar: string = "42";
+    let object: string = "{\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}";
+    let nested: string = "{\"user\":{\"id\":42,\"name\":\"alice\",\"roles\":[\"admin\",\"reader\"],\"active\":true},\"items\":[{\"sku\":\"a-1\",\"qty\":2},{\"sku\":\"b-2\",\"qty\":5}],\"meta\":{\"trace\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"ok\":null}}";
+
+    print_header();
+    bench_parse(&"parse_scalar", &scalar, iterations);
+    bench_validate(&"validate_scalar", &scalar, iterations);
+    bench_parse(&"parse_object", &object, iterations);
+    bench_validate(&"validate_object", &object, iterations);
+    bench_parse(&"parse_nested", &nested, iterations);
+    bench_validate(&"validate_nested", &nested, iterations);
+    return 0;
+}

@@ -8,6 +8,7 @@ The harness is intentionally small:
 - `scripts/bench.sh` builds `surgekv`, starts an isolated server, runs a short matrix, and writes a markdown report.
 - `benchmarks/state_probe` isolates direct `Store` work from the manager channel hop.
 - `benchmarks/server_probe` isolates line parsing, shard routing, response bytes, and protocol pipeline cost.
+- `benchmarks/json_probe` compares full JSON parsing with validate-only checks.
 - Redis and Valkey are included automatically when `redis-server` or `valkey-server` are installed.
 
 Run the default local matrix:
@@ -32,10 +33,14 @@ The current eight-thread comparison report is
 `benchmarks/latest-local-threads8.md`.
 The current runtime-layer summary is `benchmarks/runtime-layer-findings.md`.
 The focused state and server primitive reports are
-`benchmarks/state-probe.md` and `benchmarks/server-probe.md`.
+`benchmarks/state-probe.md`, `benchmarks/server-probe.md`, and
+`benchmarks/json-probe.md`.
 The routing-fix TCP comparison reports are
 `benchmarks/research-hashfix-threads1.md` and
 `benchmarks/research-hashfix-threads8.md`.
+The JSON validate TCP comparison reports are
+`benchmarks/research-jsonvalidate-threads1.md` and
+`benchmarks/research-jsonvalidate-threads8.md`.
 
 ## Reading Results
 
@@ -60,8 +65,9 @@ The first numbers to watch are:
   throughput claims.
 - Default `surgekv`, `SURGE_THREADS=1`, and `SURGE_THREADS=8` complete the
   current 32-client stateful matrix with zero errors.
-- `SURGE_THREADS=8` is currently the best local mode for stateful rows, around
-  `4.7-5.3k rps`; Redis/Valkey are still around `60-72k rps` on the same host.
+- `SURGE_THREADS=8` currently reaches about `5.6k GET rps`, `4.9k SET rps`,
+  and `4.0k mixed rps`; Redis/Valkey are still around `68-79k rps` on the
+  same host.
 - The previous smallest confirmed trigger was short-lived connection churn plus
   synchronous disconnect cleanup fanout; current `surgekv` has moved that
   cleanup off the socket hot path.

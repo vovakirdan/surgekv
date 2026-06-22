@@ -36,7 +36,7 @@ fn ensure_no_tail(tail: string?, usage: &string) -> Erring<nothing, Error> {
 }
 
 fn ensure_json(text: &string) -> Erring<nothing, Error> {
-    compare json.parse(text) {
+    compare json.validate(text) {
         Success(_) => {
             return Success(nothing);
         }

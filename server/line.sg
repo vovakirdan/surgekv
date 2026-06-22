@@ -16,18 +16,17 @@ fn append_chunk(buffer: &mut string, bytes: &byte[]) -> Erring<nothing, Error> {
 }
 
 fn take_next_line(buffer: &mut string) -> string? {
-    let current: string = buffer.__clone();
-    let newline_idx: int = current.find("\n");
+    let newline_idx: int = buffer.find("\n");
     if newline_idx < 0 {
         return nothing;
     }
 
-    let length: int = current.__len() to int;
-    let line: string = current[[0..newline_idx]].trim_end();
+    let length: int = buffer.__len() to int;
+    let line: string = buffer[[0..newline_idx]].trim_end();
     if newline_idx + 1 >= length {
         *buffer = "";
     } else {
-        *buffer = current[[newline_idx + 1..length]];
+        *buffer = buffer[[newline_idx + 1..length]];
     }
     return Some(line);
 }
