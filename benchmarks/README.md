@@ -37,6 +37,7 @@ The focused state and server primitive reports are
 `benchmarks/state-probe.md`, `benchmarks/server-probe.md`, and
 `benchmarks/json-probe.md`.
 The focused TCP pipelining report is `benchmarks/tcp-pipeline-probe.md`.
+The manager-path comparison report is `benchmarks/manager-path-probe.md`.
 The routing-fix TCP comparison reports are
 `benchmarks/research-hashfix-threads1.md` and
 `benchmarks/research-hashfix-threads8.md`.

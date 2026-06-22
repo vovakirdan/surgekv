@@ -20,6 +20,7 @@ Source reports:
 - `benchmarks/research-pipeline-threads8.md`
 - `benchmarks/research-batchwrite-threads1.md`
 - `benchmarks/research-batchwrite-threads8.md`
+- `benchmarks/manager-path-probe.md`
 
 ## Short conclusion
 
@@ -42,6 +43,8 @@ a 20000-request strace sample from about `20005` writes to `133`.
 Roundtrip rows move less than pipeline rows. The in-process server pipeline is
 about `67us` for GET and `161us` for SET, so the next bottleneck is likely
 per-request scheduling/manager work rather than socket write syscalls alone.
+The `WHOAMI` probe confirms all-shard manager fanout is expensive, but GET is
+still much closer to the parser/response path than to all-shard fanout.
 
 ## Evidence
 
@@ -122,8 +125,9 @@ TCP pipelined rows, 5000 requests per row, 32 clients:
 - Do not spend much more time on line-buffer micro-tweaks yet; `take_next_line`
   is around `10-11us/op`, while the TCP path still has much larger visible
   costs.
-- Split manager/channel cost from scheduler cost with a PING-like in-memory
-  command and a GET-like no-manager TCP command.
+- Optimize response serialization and parser/tokenizer cost before redesigning
+  the manager. `WHOAMI` confirms all-shard fanout is expensive, but it is not
+  the hot GET/SET shape.
 - Add long-run RSS/heap sampling once the short path stops moving quickly.
 
 Surge / runtime work:

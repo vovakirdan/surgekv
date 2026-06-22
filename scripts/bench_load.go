@@ -68,7 +68,7 @@ func main() {
 	keys := makeKeys(cfg.keys)
 	value := makeValue(cfg.valueLen)
 
-	if cfg.prepare && cfg.baseOp != "ping" {
+	if cfg.prepare && cfg.baseOp != "ping" && cfg.baseOp != "whoami" {
 		if err := prepareData(cfg, keys, value); err != nil {
 			fmt.Fprintf(os.Stderr, "prepare failed: %v\n", err)
 			os.Exit(1)
@@ -92,7 +92,7 @@ func parseFlags() config {
 	flag.StringVar(&cfg.target, "target", "surgekv", "target protocol: surgekv, redis, or valkey")
 	flag.StringVar(&cfg.host, "host", "127.0.0.1", "target host")
 	flag.IntVar(&cfg.port, "port", 7379, "target TCP port")
-	flag.StringVar(&cfg.op, "op", "mixed", "operation: ping, get, set, mixed, or *_pipe")
+	flag.StringVar(&cfg.op, "op", "mixed", "operation: ping, whoami, get, set, mixed, or *_pipe")
 	flag.IntVar(&cfg.clients, "clients", 16, "concurrent client connections")
 	flag.IntVar(&cfg.requests, "requests", 200, "total requests")
 	flag.IntVar(&cfg.keys, "keys", 50, "key cardinality")
@@ -110,7 +110,7 @@ func parseFlags() config {
 		cfg.pipeline = true
 		cfg.baseOp = strings.TrimSuffix(cfg.baseOp, "_pipe")
 	}
-	if cfg.baseOp != "ping" && cfg.baseOp != "get" && cfg.baseOp != "set" && cfg.baseOp != "mixed" {
+	if cfg.baseOp != "ping" && cfg.baseOp != "whoami" && cfg.baseOp != "get" && cfg.baseOp != "set" && cfg.baseOp != "mixed" {
 		fatalf("unsupported op %q", cfg.op)
 	}
 	if cfg.clients <= 0 {
@@ -372,6 +372,8 @@ func commandLine(op string, key string, value string) string {
 	switch op {
 	case "ping":
 		return "PING"
+	case "whoami":
+		return "WHOAMI"
 	case "get":
 		return "GET " + key
 	case "set":
@@ -435,6 +437,9 @@ func (c *clientConn) readCommandResponse(line string) error {
 	}
 	if line == "PING" && resp != "PONG" {
 		return fmt.Errorf("expected PONG, got %q", resp)
+	}
+	if line == "WHOAMI" && !strings.HasPrefix(resp, "CLIENT ") {
+		return fmt.Errorf("expected CLIENT, got %q", resp)
 	}
 	if strings.HasPrefix(line, "GET ") && !strings.HasPrefix(resp, "VALUE ") {
 		return fmt.Errorf("expected VALUE, got %q", resp)
