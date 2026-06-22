@@ -212,6 +212,7 @@ append_notes() {
         echo "## Notes"
         echo
         echo "- The benchmark client uses one persistent TCP connection per logical client."
+        echo '- `*_pipe` rows write each worker batch with one flush; latency columns are amortized per-request batch time.'
         echo '- `mixed` alternates SET and GET over the same key space.'
         echo "- The script starts isolated local Redis/Valkey processes only when their server binaries are installed."
         echo "- Rows with non-zero errors are still recorded so partial capacity failures stay visible."

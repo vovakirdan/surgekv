@@ -22,6 +22,8 @@ type config struct {
 	host     string
 	port     int
 	op       string
+	baseOp   string
+	pipeline bool
 	clients  int
 	requests int
 	keys     int
@@ -66,7 +68,7 @@ func main() {
 	keys := makeKeys(cfg.keys)
 	value := makeValue(cfg.valueLen)
 
-	if cfg.prepare && cfg.op != "ping" {
+	if cfg.prepare && cfg.baseOp != "ping" {
 		if err := prepareData(cfg, keys, value); err != nil {
 			fmt.Fprintf(os.Stderr, "prepare failed: %v\n", err)
 			os.Exit(1)
@@ -90,7 +92,7 @@ func parseFlags() config {
 	flag.StringVar(&cfg.target, "target", "surgekv", "target protocol: surgekv, redis, or valkey")
 	flag.StringVar(&cfg.host, "host", "127.0.0.1", "target host")
 	flag.IntVar(&cfg.port, "port", 7379, "target TCP port")
-	flag.StringVar(&cfg.op, "op", "mixed", "operation: ping, get, set, or mixed")
+	flag.StringVar(&cfg.op, "op", "mixed", "operation: ping, get, set, mixed, or *_pipe")
 	flag.IntVar(&cfg.clients, "clients", 16, "concurrent client connections")
 	flag.IntVar(&cfg.requests, "requests", 200, "total requests")
 	flag.IntVar(&cfg.keys, "keys", 50, "key cardinality")
@@ -103,7 +105,12 @@ func parseFlags() config {
 	if cfg.target != "surgekv" && cfg.target != "redis" && cfg.target != "valkey" {
 		fatalf("unsupported target %q", cfg.target)
 	}
-	if cfg.op != "ping" && cfg.op != "get" && cfg.op != "set" && cfg.op != "mixed" {
+	cfg.baseOp = cfg.op
+	if strings.HasSuffix(cfg.baseOp, "_pipe") {
+		cfg.pipeline = true
+		cfg.baseOp = strings.TrimSuffix(cfg.baseOp, "_pipe")
+	}
+	if cfg.baseOp != "ping" && cfg.baseOp != "get" && cfg.baseOp != "set" && cfg.baseOp != "mixed" {
 		fatalf("unsupported op %q", cfg.op)
 	}
 	if cfg.clients <= 0 {
@@ -245,17 +252,14 @@ func runWorker(cfg config, keys []string, value string, requests int, firstSeq i
 	}
 	defer c.conn.Close()
 
+	if cfg.pipeline {
+		return runPipelineWorker(cfg, c, keys, value, requests, firstSeq)
+	}
+
 	for i := 0; i < requests; i++ {
 		seq := firstSeq + i
 		key := keys[seq%len(keys)]
-		op := cfg.op
-		if op == "mixed" {
-			if seq%2 == 0 {
-				op = "set"
-			} else {
-				op = "get"
-			}
-		}
+		op := opForSequence(cfg.baseOp, seq)
 
 		startedAt := time.Now()
 		c.conn.SetDeadline(startedAt.Add(cfg.timeout))
@@ -269,6 +273,60 @@ func runWorker(cfg config, keys []string, value string, requests int, firstSeq i
 		result.latencies = append(result.latencies, time.Since(startedAt).Microseconds())
 	}
 	return result
+}
+
+func runPipelineWorker(cfg config, c *clientConn, keys []string, value string, requests int, firstSeq int) workerResult {
+	result := workerResult{latencies: make([]int64, 0, requests)}
+	if requests == 0 {
+		return result
+	}
+
+	lines := make([]string, 0, requests)
+	startedAt := time.Now()
+	c.conn.SetDeadline(startedAt.Add(cfg.timeout))
+	for i := 0; i < requests; i++ {
+		seq := firstSeq + i
+		key := keys[seq%len(keys)]
+		op := opForSequence(cfg.baseOp, seq)
+		line := commandLine(op, key, value)
+		lines = append(lines, line)
+		if err := c.writeCommand(op, key, value); err != nil {
+			result.errors = requests
+			result.firstErr = err.Error()
+			return result
+		}
+	}
+	if err := c.w.Flush(); err != nil {
+		result.errors = requests
+		result.firstErr = err.Error()
+		return result
+	}
+	for _, line := range lines {
+		if err := c.readCommandResponse(line); err != nil {
+			result.errors++
+			if result.firstErr == "" {
+				result.firstErr = err.Error()
+			}
+		}
+	}
+
+	// ponytail: pipeline rows use amortized batch latency; add per-command
+	// timestamps only if these rows become a tail-latency benchmark.
+	perRequest := time.Since(startedAt).Microseconds() / int64(requests)
+	for i := 0; i < requests-result.errors; i++ {
+		result.latencies = append(result.latencies, perRequest)
+	}
+	return result
+}
+
+func opForSequence(baseOp string, seq int) string {
+	if baseOp == "mixed" {
+		if seq%2 == 0 {
+			return "set"
+		}
+		return "get"
+	}
+	return baseOp
 }
 
 func dialTarget(cfg config) (*clientConn, error) {
@@ -286,36 +344,85 @@ func dialTarget(cfg config) (*clientConn, error) {
 }
 
 func (c *clientConn) do(op string, key string, value string) error {
+	line := commandLine(op, key, value)
+	if line == "" {
+		return fmt.Errorf("unsupported op %q", op)
+	}
+	if err := c.writeCommand(op, key, value); err != nil {
+		return err
+	}
+	if err := c.w.Flush(); err != nil {
+		return err
+	}
+	return c.readCommandResponse(line)
+}
+
+func (c *clientConn) surgeCommand(line string) error {
+	op, key, value := splitSurgeLine(line)
+	if err := c.writeCommand(op, key, value); err != nil {
+		return err
+	}
+	if err := c.w.Flush(); err != nil {
+		return err
+	}
+	return c.readCommandResponse(line)
+}
+
+func commandLine(op string, key string, value string) string {
+	switch op {
+	case "ping":
+		return "PING"
+	case "get":
+		return "GET " + key
+	case "set":
+		return "SET " + key + " " + value
+	case "new":
+		return "NEW " + key + " " + value
+	default:
+		return ""
+	}
+}
+
+func splitSurgeLine(line string) (string, string, string) {
+	if line == "PING" {
+		return "ping", "", ""
+	}
+	parts := strings.SplitN(line, " ", 3)
+	if len(parts) < 2 {
+		return "", "", ""
+	}
+	op := strings.ToLower(parts[0])
+	if len(parts) == 2 {
+		return op, parts[1], ""
+	}
+	return op, parts[1], parts[2]
+}
+
+func (c *clientConn) writeCommand(op string, key string, value string) error {
 	if c.target == "surgekv" {
-		switch op {
-		case "ping":
-			return c.surgeCommand("PING")
-		case "get":
-			return c.surgeCommand("GET " + key)
-		case "set":
-			return c.surgeCommand("SET " + key + " " + value)
-		default:
+		line := commandLine(op, key, value)
+		if line == "" {
 			return fmt.Errorf("unsupported op %q", op)
 		}
+		_, err := c.w.WriteString(line + "\n")
+		return err
 	}
 
 	switch op {
 	case "ping":
-		return c.redisCommand("PING")
+		return writeRESP(c.w, []string{"PING"})
 	case "get":
-		return c.redisCommand("GET", key)
+		return writeRESP(c.w, []string{"GET", key})
 	case "set":
-		return c.redisCommand("SET", key, value)
+		return writeRESP(c.w, []string{"SET", key, value})
 	default:
 		return fmt.Errorf("unsupported op %q", op)
 	}
 }
 
-func (c *clientConn) surgeCommand(line string) error {
-	if _, err := c.w.WriteString(line + "\n"); err != nil {
-		return err
-	}
-	if err := c.w.Flush(); err != nil {
+func (c *clientConn) readCommandResponse(line string) error {
+	if c.target != "surgekv" {
+		_, err := readRESP(c.r)
 		return err
 	}
 	resp, err := c.r.ReadString('\n')

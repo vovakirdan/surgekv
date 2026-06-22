@@ -15,6 +15,11 @@ Source reports:
 - `benchmarks/research-hashfix-threads8.md`
 - `benchmarks/research-jsonvalidate-threads1.md`
 - `benchmarks/research-jsonvalidate-threads8.md`
+- `benchmarks/tcp-pipeline-probe.md`
+- `benchmarks/research-pipeline-threads1.md`
+- `benchmarks/research-pipeline-threads8.md`
+- `benchmarks/research-batchwrite-threads1.md`
+- `benchmarks/research-batchwrite-threads8.md`
 
 ## Short conclusion
 
@@ -30,10 +35,13 @@ The two large confirmed wins are done:
   On the current compiler/stdlib, object validation is about `3.4us/op` instead
   of full parse at about `149us/op`.
 
-The next bottleneck is the full TCP/runtime path. The in-process server
-pipeline is now about `69us` for GET and `166us` for SET, while 32-client TCP
-p50 latency is still several milliseconds. That gap is larger than the current
-protocol, JSON, state, and manager micro costs.
+The socket response-write hypothesis is confirmed for pipelined clients.
+Batching already-buffered responses lifts `ping_pipe` to `72-82k rps` and drops
+a 20000-request strace sample from about `20005` writes to `133`.
+
+Roundtrip rows move less than pipeline rows. The in-process server pipeline is
+about `67us` for GET and `161us` for SET, so the next bottleneck is likely
+per-request scheduling/manager work rather than socket write syscalls alone.
 
 ## Evidence
 
@@ -62,12 +70,12 @@ Server primitive rows:
 
 | probe | ns/op |
 | --- | ---: |
-| `take_next_line_single` | 10331 |
-| `take_next_line_pipelined4` | 11408 |
-| bucket-only routing helper | 12030 |
-| `line_bytes_value_server` | 27358 |
-| GET pipeline, bucket helper, no TCP/manager | 68696 |
-| SET pipeline, bucket helper, no TCP/manager | 165776 |
+| `take_next_line_single` | 10245 |
+| `take_next_line_pipelined4` | 11549 |
+| bucket-only routing helper | 12004 |
+| `line_bytes_value_server` | 27658 |
+| GET pipeline, bucket helper, no TCP/manager | 67316 |
+| SET pipeline, bucket helper, no TCP/manager | 160697 |
 
 State and manager rows from the previous probe:
 
@@ -93,22 +101,36 @@ TCP rows before the JSON validate fix, after the hash fix:
 | `SURGE_THREADS=1` | 3943 | 1382 | 2007 |
 | `SURGE_THREADS=8` | 5344 | 2532 | 3117 |
 
+TCP pipelined rows, 5000 requests per row, 32 clients:
+
+| mode | PING pipe rps | GET pipe rps | SET pipe rps | mixed pipe rps |
+| --- | ---: | ---: | ---: | ---: |
+| `SURGE_THREADS=1`, before batch writes | 38358 | 4519 | 2861 | 2379 |
+| `SURGE_THREADS=1`, after batch writes | 72025 | 8982 | 3964 | 5380 |
+| `SURGE_THREADS=8`, before batch writes | 21851 | 8130 | 5323 | 5986 |
+| `SURGE_THREADS=8`, after batch writes | 81806 | 10191 | 5737 | 7370 |
+| Redis, same 8-thread run | 1740219 | 1180159 | 946484 | 1245941 |
+| Valkey, same 8-thread run | 1794051 | 1220881 | 1092465 | 996828 |
+
 ## Next Work
 
 `surgekv` work:
 
 - Keep the `json.validate` wrapper and the local bucket helper.
-- Do not spend much more time on line-buffer or response-byte micro-tweaks yet;
-  they are around `10-27us/op`, while TCP p50 is still measured in
-  milliseconds at 32 clients.
-- Add a minimal TCP server-path probe if needed: PING-only, parse-only, and
-  parse+write rows without manager state.
+- Keep response batching in `serve_client`; it confirms the pipelined socket
+  write hypothesis.
+- Do not spend much more time on line-buffer micro-tweaks yet; `take_next_line`
+  is around `10-11us/op`, while the TCP path still has much larger visible
+  costs.
+- Split manager/channel cost from scheduler cost with a PING-like in-memory
+  command and a GET-like no-manager TCP command.
 - Add long-run RSS/heap sampling once the short path stops moving quickly.
 
 Surge / runtime work:
 
-- Investigate multi-worker TCP scheduling and tail latency. `SURGE_THREADS=8`
-  improves SET throughput but hurts PING throughput versus one thread.
+- Investigate multi-worker TCP scheduling and tail latency after response
+  batching. `SURGE_THREADS=8` improves SET throughput but hurts PING throughput
+  versus one thread.
 - Keep an eye on channel hop cost, but it is not the largest known number after
   the JSON fix.
 - Track stdlib hash follow-up in `vovakirdan/surge#144`; `surgekv` still has a

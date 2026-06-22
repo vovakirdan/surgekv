@@ -9,6 +9,7 @@ The harness is intentionally small:
 - `benchmarks/state_probe` isolates direct `Store` work from the manager channel hop.
 - `benchmarks/server_probe` isolates line parsing, shard routing, response bytes, and protocol pipeline cost.
 - `benchmarks/json_probe` compares full JSON parsing with validate-only checks.
+- `scripts/bench_load.go` supports `*_pipe` operations to isolate TCP pipelining.
 - Redis and Valkey are included automatically when `redis-server` or `valkey-server` are installed.
 
 Run the default local matrix:
@@ -35,12 +36,19 @@ The current runtime-layer summary is `benchmarks/runtime-layer-findings.md`.
 The focused state and server primitive reports are
 `benchmarks/state-probe.md`, `benchmarks/server-probe.md`, and
 `benchmarks/json-probe.md`.
+The focused TCP pipelining report is `benchmarks/tcp-pipeline-probe.md`.
 The routing-fix TCP comparison reports are
 `benchmarks/research-hashfix-threads1.md` and
 `benchmarks/research-hashfix-threads8.md`.
 The JSON validate TCP comparison reports are
 `benchmarks/research-jsonvalidate-threads1.md` and
 `benchmarks/research-jsonvalidate-threads8.md`.
+The TCP pipelining comparison reports are
+`benchmarks/research-pipeline-threads1.md` and
+`benchmarks/research-pipeline-threads8.md`.
+The response-batching comparison reports are
+`benchmarks/research-batchwrite-threads1.md` and
+`benchmarks/research-batchwrite-threads8.md`.
 
 ## Reading Results
 
@@ -68,6 +76,9 @@ The first numbers to watch are:
 - `SURGE_THREADS=8` currently reaches about `5.6k GET rps`, `4.9k SET rps`,
   and `4.0k mixed rps`; Redis/Valkey are still around `68-79k rps` on the
   same host.
+- Response batching confirms the socket-write hypothesis: `ping_pipe` rises to
+  `72-82k rps`, and a 20000-request strace run drops from about `20005` writes
+  to `133`.
 - The previous smallest confirmed trigger was short-lived connection churn plus
   synchronous disconnect cleanup fanout; current `surgekv` has moved that
   cleanup off the socket hot path.

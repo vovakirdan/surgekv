@@ -52,9 +52,22 @@ fn take_next_line_copy(buffer: &mut string) -> string? {
     return Some(line);
 }
 
-fn line_bytes_copy(line: string) -> byte[] {
-    let mut out: byte[] = line to byte[];
+fn append_line_bytes_copy(out: &mut byte[], line: &string) -> nothing {
+    let view = line.bytes();
+    let length: int = view.__len() to int;
+    let mut i: int = 0;
+    while i < length {
+        out.push(view[i]);
+        i = i + 1;
+    }
     out.push(10:byte);
+    return nothing;
+}
+
+fn line_bytes_copy(line: string) -> byte[] {
+    let mut out: byte[] = [];
+    out.reserve(line.__len() + 1:uint);
+    append_line_bytes_copy(&mut out, &line);
     return out;
 }
 
