@@ -1,13 +1,7 @@
 pragma module;
 
 fn append_line_bytes(out: &mut byte[], line: &string) -> nothing {
-    let view = line.bytes();
-    let length: int = view.__len() to int;
-    let mut i: int = 0;
-    while i < length {
-        out.push(view[i]);
-        i = i + 1;
-    }
+    out.append_string(line);
     out.push(10:byte);
     return nothing;
 }
