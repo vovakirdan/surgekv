@@ -302,6 +302,7 @@ func runPipelineWorker(cfg config, c *clientConn, keys []string, value string, r
 		return result
 	}
 	for _, line := range lines {
+		c.conn.SetDeadline(time.Now().Add(cfg.timeout))
 		if err := c.readCommandResponse(line); err != nil {
 			result.errors++
 			if result.firstErr == "" {
@@ -388,6 +389,9 @@ func commandLine(op string, key string, value string) string {
 func splitSurgeLine(line string) (string, string, string) {
 	if line == "PING" {
 		return "ping", "", ""
+	}
+	if line == "WHOAMI" {
+		return "whoami", "", ""
 	}
 	parts := strings.SplitN(line, " ", 3)
 	if len(parts) < 2 {
