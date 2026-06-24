@@ -92,7 +92,7 @@ func parseFlags() config {
 	flag.StringVar(&cfg.target, "target", "surgekv", "target protocol: surgekv, redis, or valkey")
 	flag.StringVar(&cfg.host, "host", "127.0.0.1", "target host")
 	flag.IntVar(&cfg.port, "port", 7379, "target TCP port")
-	flag.StringVar(&cfg.op, "op", "mixed", "operation: ping, whoami, get, set, mixed, or *_pipe")
+	flag.StringVar(&cfg.op, "op", "mixed", "operation: ping, whoami, get, set, setif, own_ttl, borrow_ttl, mixed, or *_pipe")
 	flag.IntVar(&cfg.clients, "clients", 16, "concurrent client connections")
 	flag.IntVar(&cfg.requests, "requests", 200, "total requests")
 	flag.IntVar(&cfg.keys, "keys", 50, "key cardinality")
@@ -110,7 +110,7 @@ func parseFlags() config {
 		cfg.pipeline = true
 		cfg.baseOp = strings.TrimSuffix(cfg.baseOp, "_pipe")
 	}
-	if cfg.baseOp != "ping" && cfg.baseOp != "whoami" && cfg.baseOp != "get" && cfg.baseOp != "set" && cfg.baseOp != "mixed" {
+	if cfg.baseOp != "ping" && cfg.baseOp != "whoami" && cfg.baseOp != "get" && cfg.baseOp != "set" && cfg.baseOp != "setif" && cfg.baseOp != "own_ttl" && cfg.baseOp != "borrow_ttl" && cfg.baseOp != "mixed" {
 		fatalf("unsupported op %q", cfg.op)
 	}
 	if cfg.clients <= 0 {
@@ -379,6 +379,12 @@ func commandLine(op string, key string, value string) string {
 		return "GET " + key
 	case "set":
 		return "SET " + key + " " + value
+	case "setif":
+		return "SET " + key + " " + value + " IF 1"
+	case "own_ttl":
+		return "OWN " + key + " TTL 60"
+	case "borrow_ttl":
+		return "BORROW " + key + " TTL 60"
 	case "new":
 		return "NEW " + key + " " + value
 	default:
@@ -453,6 +459,12 @@ func (c *clientConn) readCommandResponse(line string) error {
 	}
 	if strings.HasPrefix(line, "NEW ") && !strings.HasPrefix(resp, "OK") {
 		return errors.New(resp)
+	}
+	if strings.HasPrefix(line, "OWN ") && !strings.HasPrefix(resp, "OK") {
+		return fmt.Errorf("expected OK, got %q", resp)
+	}
+	if strings.HasPrefix(line, "BORROW ") && !strings.HasPrefix(resp, "OK") {
+		return fmt.Errorf("expected OK, got %q", resp)
 	}
 	return nil
 }

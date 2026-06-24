@@ -1,6 +1,7 @@
 pragma module;
 
 import stdlib/time as time;
+import stdlib/bytes as by;
 import ../../proto as proto;
 
 fn elapsed_us(start: time.Duration) -> int64 {
@@ -56,6 +57,32 @@ fn bench_parse(name: &string, line: &string, iterations: int) -> nothing {
     let mut i: int = 0;
     while i < iterations {
         compare proto.parse_line(line) {
+            Success(cmd) => {
+                total = total + command_weight(cmd);
+            }
+            err => {
+                print(proto.format_parse_error(&err));
+                return nothing;
+            }
+        };
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(name, iterations, total_us);
+    return nothing;
+}
+
+fn bench_parse_bytes(name: &string, line: &string, iterations: int) -> nothing {
+    let bytes: byte[] = line.__clone() to byte[];
+    let range: by.ByteRange = by.all(&bytes);
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        compare proto.parse_line_bytes(&bytes, range) {
             Success(cmd) => {
                 total = total + command_weight(cmd);
             }
@@ -197,6 +224,12 @@ fn main() -> int {
     bench_parse(&"parse_ping", &"PING", iterations);
     bench_parse(&"parse_get", &"GET key-42", iterations);
     bench_parse(&"parse_set", &"SET key-42 {\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}", iterations);
+    bench_parse(&"parse_set_if", &"SET key-42 {\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"} IF 12345", iterations);
+    bench_parse(&"parse_own_ttl", &"OWN key-42 TTL 60", iterations);
+    bench_parse(&"parse_borrow_ttl", &"BORROW key-42 TTL 60", iterations);
+    bench_parse_bytes(&"parse_set_if_bytes", &"SET key-42 {\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"} IF 12345", iterations);
+    bench_parse_bytes(&"parse_own_ttl_bytes", &"OWN key-42 TTL 60", iterations);
+    bench_parse_bytes(&"parse_borrow_ttl_bytes", &"BORROW key-42 TTL 60", iterations);
     bench_parse_mixed(iterations);
     bench_format_value(iterations);
     bench_format_ok(iterations);

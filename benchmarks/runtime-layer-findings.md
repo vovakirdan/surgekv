@@ -1,6 +1,6 @@
 # surgekv runtime layer findings
 
-Generated: 2026-06-23 with Surge `0.1.12-dev` commit `5c4a0db`.
+Generated: 2026-06-24 with Surge `0.1.13-dev` commit `08c5fef`.
 
 Important benchmark builds used `SURGE_STDLIB=/home/zov/projects/surge/surge`
 so the fresh compiler used the matching checkout stdlib.
@@ -24,6 +24,7 @@ Source reports:
 - `benchmarks/research-append-string-response.md`
 - `benchmarks/research-next-layer-threads1.md`
 - `benchmarks/research-next-layer-threads8.md`
+- `benchmarks/research-byte-numeric-parser.md`
 
 ## Short conclusion
 
@@ -41,6 +42,12 @@ The large confirmed wins are done:
 - `append_line_bytes` now uses `Array<byte>.append_string`, the stdlib bulk-copy
   helper. `line_bytes_value_server` moved from the previous `~28us/op` range to
   `~1.5us/op`.
+- The input side now uses `stdlib/bytes.ByteBuffer`, and numeric protocol
+  fields in `SET ... IF` plus `OWN/BORROW ... TTL` use
+  `bytes.next_uint64_ascii_token`. The protocol-only numeric rows improve by
+  about `1.36-1.44x`. Full TCP `SET IF` improves by about `4-16%` in the short
+  local matrix. TTL lease commands barely move, so their bottleneck is not
+  numeric token parsing.
 
 The socket response-write hypothesis is confirmed for pipelined clients.
 Batching already-buffered responses lifts `ping_pipe` to `72-82k rps` and drops
@@ -88,6 +95,14 @@ Protocol probe, 20000 iterations:
 | `parse_set` | 80654 |
 | `parse_mixed_get_set` | 52155 |
 | `line_bytes_value` | 1477 |
+
+Byte numeric parser probe, 20000 iterations:
+
+| probe | string parser ns/op | byte parser ns/op | speedup |
+| --- | ---: | ---: | ---: |
+| `SET ... IF` | 45,208 | 31,581 | 1.43x |
+| `OWN ... TTL` | 33,613 | 23,398 | 1.44x |
+| `BORROW ... TTL` | 35,407 | 25,950 | 1.36x |
 
 Server primitive rows:
 
@@ -156,6 +171,21 @@ Focused TCP rows for the next layer, 5000 requests per row:
 | `SURGE_THREADS=8` | get | 32 | 5241 | 5884 | 5267 | 0 |
 | `SURGE_THREADS=8` | get_pipe | 32 | 8386 | 3578 | 3641 | 0 |
 
+Focused TCP rows after the byte input buffer and byte numeric parser patch,
+5000 requests per row, 5000 keys, 64-byte values:
+
+| op | clients | before rps | after rps | before avg us | after avg us | errors |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `setif` | 1 | 2420 | 2816 | 412 | 354 | 0 |
+| `setif` | 8 | 5233 | 5458 | 1476 | 1415 | 0 |
+| `setif` | 32 | 5759 | 6366 | 4985 | 4547 | 0 |
+| `own_ttl` | 1 | 640 | 672 | 1560 | 1487 | 0 |
+| `own_ttl` | 8 | 2511 | 2534 | 3117 | 3081 | 0 |
+| `own_ttl` | 32 | 2959 | 2836 | 9971 | 10396 | 0 |
+| `borrow_ttl` | 1 | 646 | 649 | 1546 | 1539 | 0 |
+| `borrow_ttl` | 8 | 2494 | 2559 | 3139 | 3051 | 0 |
+| `borrow_ttl` | 32 | 2802 | 2931 | 10492 | 9935 | 0 |
+
 TCP rows before the JSON validate fix, after the hash fix:
 
 | mode | GET rps | SET rps | mixed rps |
@@ -183,9 +213,12 @@ TCP pipelined rows, 5000 requests per row, 32 clients:
   loops are still slow.
 - Keep response batching in `serve_client`; it confirms the pipelined socket
   write hypothesis.
-- Parser/tokenizer and line-buffer work is still worth doing, but it can only
-  recover tens of microseconds locally. It cannot explain the current
-  single-client TCP GET gap by itself.
+- Keep the byte input buffer and byte numeric parser. Broader parser/tokenizer
+  work can still recover tens of microseconds locally, but issue #4 confirms it
+  cannot explain the current single-client TCP GET gap by itself.
+- Investigate `OWN/BORROW TTL` separately: after the numeric parser patch, TTL
+  traffic still sits near `650 rps` for one client, so lease mutation,
+  expiry-record maintenance, or manager/task interaction is the likely layer.
 - Do not prioritize `net.write_all_string` until a new TCP-specific trace shows
   write-side cost again. The cheap response byte path is already in place.
 - Add long-run RSS/heap sampling once the short path stops moving quickly.

@@ -6,7 +6,7 @@ fn print_listen_banner(port: uint) -> nothing {
 }
 
 async fn serve_client(conn: TcpConn, router: ShardRouter, client_id: string, read_cap: uint, cleanup_clients: Channel<string>) -> nothing {
-    let mut buffer: string = "";
+    let mut buffer = by.buffer();
     // A socket task processes one request at a time, so key-scoped commands can
     // reuse a single manager reply channel for the whole client lifetime.
     let state_reply = make_channel::<string>(1:uint);
@@ -16,14 +16,13 @@ async fn serve_client(conn: TcpConn, router: ShardRouter, client_id: string, rea
         while true {
             compare take_next_line(&mut buffer) {
                 Some(line) => {
-                    let trimmed_line: string = line.trim();
                     let mut response: string = "";
-                    if trimmed_line == "PING" {
+                    if by.range_eq_ascii(buffer.data, line.body, &"PING") {
                         response = "PONG";
                     } else {
                         // Keep manager channel send/recv in this socket task. Wrapping
                         // them through sync helpers can fall back to blocking lowering.
-                        response = compare proto.parse_line(&line) {
+                        response = compare proto.parse_line_bytes(&buffer.data, line.body) {
                             Success(cmd) => {
                                 ret compare cmd {
                                     proto.Ping() => "PONG";
@@ -183,6 +182,7 @@ async fn serve_client(conn: TcpConn, router: ShardRouter, client_id: string, rea
                     continue;
                 }
                 nothing => {
+                    buffer.compact();
                     break;
                 }
             };
