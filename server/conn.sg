@@ -1,7 +1,14 @@
 pragma module;
 
-fn line_bytes(line: string) -> byte[] {
-    let mut out: byte[] = line to byte[];
+fn append_line_bytes(out: &mut byte[], line: &string) -> nothing {
+    out.append_string(line);
     out.push(10:byte);
+    return nothing;
+}
+
+fn line_bytes(line: string) -> byte[] {
+    let mut out: byte[] = [];
+    out.reserve(line.__len() + 1:uint);
+    append_line_bytes(&mut out, &line);
     return out;
 }

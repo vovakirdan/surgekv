@@ -1,5 +1,6 @@
 pragma module;
 
+import stdlib/bytes as by;
 import stdlib/directives/test;
 
 /// test:
@@ -9,14 +10,15 @@ import stdlib/directives/test;
 /// test.eq::<string>(next_client_id(&mut next_id), "client-2");
 ///
 /// TakeNextLineConsumesBuffer:
-/// let mut buffer: string = "PING\r\nGET key\n";
-/// let line1 = compare take_next_line(&mut buffer) { Some(v) => v; nothing => "missing"; };
-/// let line2 = compare take_next_line(&mut buffer) { Some(v) => v; nothing => "missing"; };
-/// let line3 = compare take_next_line(&mut buffer) { Some(v) => v; nothing => "none"; };
-/// test.eq::<string>(line1, "PING");
-/// test.eq::<string>(line2, "GET key");
-/// test.eq::<string>(line3, "none");
-/// test.eq::<string>(buffer, "");
+/// let mut buffer = by.buffer_from("PING\r\nGET key\n" to byte[]);
+/// let line1 = compare take_next_line(&mut buffer) { Some(v) => by.range_eq_ascii(buffer.data, v.body, &"PING"); nothing => false; };
+/// let line2 = compare take_next_line(&mut buffer) { Some(v) => by.range_eq_ascii(buffer.data, v.body, &"GET key"); nothing => false; };
+/// let line3 = compare take_next_line(&mut buffer) { Some(_) => false; nothing => true; };
+/// buffer.compact();
+/// test.assert(line1);
+/// test.assert(line2);
+/// test.assert(line3);
+/// test.eq::<uint>(buffer.len(), 0:uint);
 ///
 /// ParseErrorFormatting:
 /// let bad = compare proto.parse_line(&"BOOM") { Success(_) => "missing"; err => proto.format_parse_error(&err); };

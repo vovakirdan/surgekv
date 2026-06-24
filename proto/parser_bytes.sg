@@ -1,0 +1,221 @@
+pragma module;
+
+import stdlib/bytes as by;
+
+const PROTO_BYTE_SPACE: byte = 32:byte;
+const PROTO_BYTE_I: byte = 73:byte;
+const PROTO_BYTE_F: byte = 70:byte;
+
+fn range_to_string(data: &byte[], r: by.ByteRange, message: &string) -> Erring<string, Error> {
+    compare by.copy_range(data, r) {
+        Success(bytes) => {
+            compare string.from_bytes(&bytes) {
+                Success(text) => {
+                    return Success(text);
+                }
+                _ => {
+                    return proto_error(PROTO_ERR_BAD_CMD, message);
+                }
+            };
+        }
+        _ => {
+            return proto_error(PROTO_ERR_BAD_CMD, message);
+        }
+    };
+}
+
+fn range_to_json(data: &byte[], r: by.ByteRange) -> Erring<string, Error> {
+    compare range_to_string(data, r, &"request must be valid utf-8") {
+        Success(text) => {
+            compare ensure_json(&text) {
+                Success(_) => {
+                    return Success(text);
+                }
+                err => {
+                    return err;
+                }
+            };
+        }
+        err => {
+            return err;
+        }
+    };
+}
+
+fn parse_uint_range(data: &byte[], r: by.ByteRange, message: &string) -> Erring<uint, Error> {
+    let parsed: by.ByteUint64 = compare by.next_uint64_ascii_token(data, r) {
+        Some(value) => value;
+        nothing => {
+            return proto_error(PROTO_ERR_BAD_CMD, message);
+        }
+    };
+    let tail: by.ByteRange = by.trim_ascii(data, parsed.tail);
+    if by.range_len(tail) != 0:uint {
+        return proto_error(PROTO_ERR_BAD_CMD, message);
+    }
+    return Success(parsed.value to uint);
+}
+
+fn rfind_if_marker(data: &byte[], r: by.ByteRange) -> Option<uint> {
+    if !by.is_valid_range(data, r) || by.range_len(r) < 4:uint {
+        return nothing;
+    }
+
+    let start: int = r.start to int;
+    let mut i: int = (r.end - 4:uint) to int;
+    while i >= start {
+        if data[i] == PROTO_BYTE_SPACE
+            && data[i + 1] == PROTO_BYTE_I
+            && data[i + 2] == PROTO_BYTE_F
+            && data[i + 3] == PROTO_BYTE_SPACE {
+            return Some(i to uint);
+        }
+        i = i - 1;
+    }
+    return nothing;
+}
+
+fn parse_set_cmd_bytes(data: &byte[], rest: by.ByteRange) -> Erring<Command, Error> {
+    let usage: string = "SET <key> <json> [IF <version>]";
+    let parts: by.ByteSplit = compare by.next_ascii_token(data, rest) {
+        Some(value) => value;
+        nothing => {
+            return usage_error(&usage);
+        }
+    };
+    let value_tail: by.ByteRange = by.trim_ascii(data, parts.tail);
+    if by.range_len(value_tail) == 0:uint {
+        return usage_error(&usage);
+    }
+
+    // The command owns key/value strings, but the optional numeric suffix can
+    // stay on the byte path and avoid string splitting plus uint.from_str.
+    let key: string = compare range_to_string(data, parts.head, &usage) {
+        Success(value) => value;
+        err => {
+            return err;
+        }
+    };
+
+    compare rfind_if_marker(data, value_tail) {
+        Some(if_idx) => {
+            let json_range: by.ByteRange = by.trim_ascii(data, by.range(value_tail.start, if_idx));
+            let version_range: by.ByteRange = by.trim_ascii(data, by.range(if_idx + 4:uint, value_tail.end));
+            compare range_to_json(data, json_range) {
+                Success(json_part) => {
+                    compare parse_uint_range(data, version_range, &"SET <key> <json> IF <version>") {
+                        Success(version) => {
+                            return Success(SetIf(key, json_part, version));
+                        }
+                        _ => {}
+                    };
+                }
+                _ => {}
+            };
+        }
+        nothing => {}
+    };
+
+    compare range_to_json(data, value_tail) {
+        Success(value) => {
+            return Success(Set(key, value));
+        }
+        err => {
+            return err;
+        }
+    };
+}
+
+fn parse_lease_tail_bytes(data: &byte[], rest: by.ByteRange, usage: &string) -> Erring<LeaseArgs, Error> {
+    let parts: by.ByteSplit = compare by.next_ascii_token(data, rest) {
+        Some(value) => value;
+        nothing => {
+            return lease_usage_error(usage);
+        }
+    };
+    let key: string = compare range_to_string(data, parts.head, usage) {
+        Success(value) => value;
+        err => {
+            return err;
+        }
+    };
+
+    let tail: by.ByteRange = by.trim_ascii(data, parts.tail);
+    if by.range_len(tail) == 0:uint {
+        let ttl: uint? = nothing;
+        return Success(LeaseArgs { key = key, ttl = ttl });
+    }
+
+    let ttl_kw: by.ByteSplit = compare by.next_ascii_token(data, tail) {
+        Some(value) => value;
+        nothing => {
+            return lease_usage_error(usage);
+        }
+    };
+    if !by.range_eq_ascii(data, ttl_kw.head, &"TTL") {
+        return lease_usage_error(usage);
+    }
+
+    compare parse_uint_range(data, ttl_kw.tail, usage) {
+        Success(ttl) => {
+            return Success(LeaseArgs { key = key, ttl = Some(ttl) });
+        }
+        err => {
+            return err;
+        }
+    };
+}
+
+fn parse_own_cmd_bytes(data: &byte[], rest: by.ByteRange) -> Erring<Command, Error> {
+    compare parse_lease_tail_bytes(data, rest, &"OWN <key> [TTL <seconds>]") {
+        Success(args) => {
+            return Success(Own(args.key, args.ttl));
+        }
+        err => {
+            return err;
+        }
+    };
+}
+
+fn parse_borrow_cmd_bytes(data: &byte[], rest: by.ByteRange) -> Erring<Command, Error> {
+    compare parse_lease_tail_bytes(data, rest, &"BORROW <key> [TTL <seconds>]") {
+        Success(args) => {
+            return Success(Borrow(args.key, args.ttl));
+        }
+        err => {
+            return err;
+        }
+    };
+}
+
+pub fn parse_line_bytes(data: &byte[], line: by.ByteRange) -> Erring<Command, Error> {
+    let trimmed: by.ByteRange = by.trim_ascii(data, line);
+    if by.range_len(trimmed) == 0:uint {
+        return bad_cmd(&"empty command");
+    }
+
+    let parts: by.ByteSplit = compare by.next_ascii_token(data, trimmed) {
+        Some(value) => value;
+        nothing => {
+            return bad_cmd(&"empty command");
+        }
+    };
+    if by.range_eq_ascii(data, parts.head, &"SET") {
+        return parse_set_cmd_bytes(data, parts.tail);
+    }
+    if by.range_eq_ascii(data, parts.head, &"OWN") {
+        return parse_own_cmd_bytes(data, parts.tail);
+    }
+    if by.range_eq_ascii(data, parts.head, &"BORROW") {
+        return parse_borrow_cmd_bytes(data, parts.tail);
+    }
+
+    compare range_to_string(data, line, &"request must be valid utf-8") {
+        Success(text) => {
+            return parse_line(&text);
+        }
+        err => {
+            return err;
+        }
+    };
+}

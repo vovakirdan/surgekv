@@ -2,6 +2,7 @@ pragma module;
 
 import stdlib/hash as hash;
 import stdlib/time as time;
+import ../../manager as manager;
 import ../../proto as proto;
 
 fn elapsed_us(start: time.Duration) -> int64 {
@@ -52,7 +53,44 @@ fn take_next_line_copy(buffer: &mut string) -> string? {
     return Some(line);
 }
 
+fn append_string_bytes_copy(out: &mut byte[], text: &string) -> nothing {
+    out.append_string(text);
+    return nothing;
+}
+
+fn append_line_bytes_copy(out: &mut byte[], line: &string) -> nothing {
+    append_string_bytes_copy(out, line);
+    out.push(10:byte);
+    return nothing;
+}
+
+fn append_value_line_bytes_copy(out: &mut byte[], value: &string) -> nothing {
+    append_string_bytes_copy(out, &"VALUE ");
+    append_string_bytes_copy(out, value);
+    out.push(10:byte);
+    return nothing;
+}
+
+fn value_line_bytes_direct(value: &string) -> byte[] {
+    let mut out: byte[] = [];
+    out.reserve(value.__len() + 7:uint);
+    append_value_line_bytes_copy(&mut out, value);
+    return out;
+}
+
+fn value_line_bytes_manual_string(value: &string) -> byte[] {
+    let response: string = "VALUE " + *value;
+    return line_bytes_copy(response);
+}
+
 fn line_bytes_copy(line: string) -> byte[] {
+    let mut out: byte[] = [];
+    out.reserve(line.__len() + 1:uint);
+    append_line_bytes_copy(&mut out, &line);
+    return out;
+}
+
+fn line_bytes_to_array_copy(line: string) -> byte[] {
     let mut out: byte[] = line to byte[];
     out.push(10:byte);
     return out;
@@ -204,6 +242,53 @@ fn bench_cheap_bucket(iterations: int) -> nothing {
     return nothing;
 }
 
+fn bench_parse_get(iterations: int) -> nothing {
+    let line: string = "GET key-42";
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        compare proto.parse_line(&line) {
+            Success(cmd) => {
+                compare cmd {
+                    proto.Get(key) => {
+                        total = total + key.__len();
+                    }
+                    _ => {
+                        total = total + 1:uint;
+                    }
+                };
+            }
+            _ => {}
+        };
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"parse_get_server", iterations, total_us);
+    return nothing;
+}
+
+fn bench_format_value(iterations: int) -> nothing {
+    let value: string = "{\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}";
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let response: string = proto.format_value(&value);
+        total = total + response.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"format_value_server", iterations, total_us);
+    return nothing;
+}
+
 fn bench_line_bytes(iterations: int) -> nothing {
     let response: string = "VALUE {\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}";
     let start = time.monotonic_now();
@@ -219,6 +304,102 @@ fn bench_line_bytes(iterations: int) -> nothing {
         print("impossible");
     }
     print_row(&"line_bytes_value_server", iterations, total_us);
+    return nothing;
+}
+
+fn bench_line_bytes_to_array(iterations: int) -> nothing {
+    let response: string = "VALUE {\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}";
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let bytes = line_bytes_to_array_copy(response.__clone());
+        total = total + bytes.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"line_bytes_to_array_server", iterations, total_us);
+    return nothing;
+}
+
+fn bench_bytes_view_len(iterations: int) -> nothing {
+    let response: string = "VALUE {\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}";
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let view = response.bytes();
+        total = total + view.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"bytes_view_len_value", iterations, total_us);
+    return nothing;
+}
+
+fn bench_byte_array_push_constant(iterations: int) -> nothing {
+    let byte_count: int = 65;
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let mut out: byte[] = [];
+        out.reserve(byte_count to uint);
+        let mut j: int = 0;
+        while j < byte_count {
+            out.push(120:byte);
+            j = j + 1;
+        }
+        total = total + out.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"byte_array_push_constant", iterations, total_us);
+    return nothing;
+}
+
+fn bench_value_line_bytes_manual_string(iterations: int) -> nothing {
+    let value: string = "{\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}";
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let bytes: byte[] = value_line_bytes_manual_string(&value);
+        total = total + bytes.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"value_line_bytes_manual_string", iterations, total_us);
+    return nothing;
+}
+
+fn bench_value_line_bytes_direct(iterations: int) -> nothing {
+    let value: string = "{\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}";
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let bytes: byte[] = value_line_bytes_direct(&value);
+        total = total + bytes.__len();
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"value_line_bytes_direct", iterations, total_us);
     return nothing;
 }
 
@@ -354,6 +535,105 @@ fn bench_get_pipeline_cheap(iterations: int) -> nothing {
         print("impossible");
     }
     print_row(&"get_pipeline_cheap_no_tcp_no_manager", iterations, total_us);
+    return nothing;
+}
+
+fn bench_get_pipeline_cheap_direct_response(iterations: int) -> nothing {
+    let request_bytes: byte[] = line_bytes_copy("GET key-42");
+    let value: string = "{\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}";
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let mut buffer: string = "";
+        let _ = append_chunk_copy(&mut buffer, &request_bytes);
+        compare take_next_line_copy(&mut buffer) {
+            Some(line) => {
+                compare proto.parse_line(&line) {
+                    Success(cmd) => {
+                        compare cmd {
+                            proto.Get(key) => {
+                                total = total + key.__len();
+                                total = total + cheap_shard_bucket(&key, 8:uint);
+                                let bytes: byte[] = value_line_bytes_direct(&value);
+                                total = total + bytes.__len();
+                            }
+                            _ => {
+                                total = total + 1:uint;
+                            }
+                        };
+                    }
+                    _ => {}
+                };
+            }
+            nothing => {}
+        };
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"get_pipeline_cheap_direct_response", iterations, total_us);
+    return nothing;
+}
+
+async fn bench_get_pipeline_manager(iterations: int) -> nothing {
+    let handle = manager.open(64:uint);
+    let requests = handle.requests;
+    let state_task = spawn manager.run(requests);
+    let reply = make_channel::<string>(1:uint);
+    let seed: manager.Message = manager.Apply(
+        "client-a",
+        proto.New("key-42", "{\"v\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"),
+        reply
+    );
+    requests.send(own seed);
+    let _ = reply.recv();
+
+    let request_bytes: byte[] = line_bytes_copy("GET key-42");
+    let start = time.monotonic_now();
+    let mut total: uint = 0:uint;
+    let mut i: int = 0;
+    while i < iterations {
+        let mut buffer: string = "";
+        let _ = append_chunk_copy(&mut buffer, &request_bytes);
+        compare take_next_line_copy(&mut buffer) {
+            Some(line) => {
+                compare proto.parse_line(&line) {
+                    Success(cmd) => {
+                        compare cmd {
+                            proto.Get(key) => {
+                                total = total + key.__len();
+                                total = total + cheap_shard_bucket(&key, 8:uint);
+                                let request: manager.Message = manager.GetValue(key, reply);
+                                requests.send(own request);
+                                let response: string = compare reply.recv() {
+                                    Some(value) => value;
+                                    nothing => "ERROR stopped";
+                                };
+                                let bytes: byte[] = line_bytes_copy(response);
+                                total = total + bytes.__len();
+                            }
+                            _ => {
+                                total = total + 1:uint;
+                            }
+                        };
+                    }
+                    _ => {}
+                };
+            }
+            nothing => {}
+        };
+        i = i + 1;
+    }
+    let total_us = elapsed_us(start);
+    if total == 0:uint {
+        print("impossible");
+    }
+    print_row(&"get_pipeline_manager_no_tcp", iterations, total_us);
+    requests.close();
+    let _ = state_task.await();
     return nothing;
 }
 
@@ -499,9 +779,18 @@ fn main() -> int {
     bench_append_chunk(iterations);
     bench_take_next_line(iterations);
     bench_take_next_line_pipelined(iterations);
+    bench_parse_get(iterations);
     bench_cheap_bucket(iterations);
+    bench_format_value(iterations);
     bench_line_bytes(iterations);
+    bench_line_bytes_to_array(iterations);
+    bench_byte_array_push_constant(iterations);
+    bench_bytes_view_len(iterations);
+    bench_value_line_bytes_manual_string(iterations);
+    bench_value_line_bytes_direct(iterations);
     bench_get_pipeline_cheap(iterations);
+    bench_get_pipeline_cheap_direct_response(iterations);
+    let _ = bench_get_pipeline_manager(iterations).await();
     bench_set_pipeline_cheap(iterations);
     return 0;
 }

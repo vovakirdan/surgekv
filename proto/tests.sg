@@ -1,5 +1,6 @@
 pragma module;
 
+import stdlib/bytes as by;
 import stdlib/directives/test;
 
 /// test:
@@ -14,6 +15,16 @@ import stdlib/directives/test;
 /// ParseOwnTtl:
 /// let cmd = parse_line(&"OWN session:42 TTL 30").safe();
 /// test.assert(compare cmd { Own(key, Some(ttl)) => key == "session:42" && ttl == 30:uint; _ => false; });
+///
+/// ParseSetIfBytes:
+/// let set_bytes: byte[] = "SET counter 42 IF 5" to byte[];
+/// let set_cmd = parse_line_bytes(&set_bytes, by.all(&set_bytes)).safe();
+/// test.assert(compare set_cmd { SetIf(key, value, version) => key == "counter" && value == "42" && version == 5:uint; _ => false; });
+///
+/// ParseOwnTtlBytes:
+/// let own_bytes: byte[] = "OWN session:42 TTL 30" to byte[];
+/// let own_cmd = parse_line_bytes(&own_bytes, by.all(&own_bytes)).safe();
+/// test.assert(compare own_cmd { Own(key, Some(ttl)) => key == "session:42" && ttl == 30:uint; _ => false; });
 ///
 /// RejectBadJson:
 /// let res = parse_line(&"NEW broken {");

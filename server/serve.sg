@@ -6,193 +6,202 @@ fn print_listen_banner(port: uint) -> nothing {
 }
 
 async fn serve_client(conn: TcpConn, router: ShardRouter, client_id: string, read_cap: uint, cleanup_clients: Channel<string>) -> nothing {
-    let mut buffer: string = "";
+    let mut buffer = by.buffer();
     // A socket task processes one request at a time, so key-scoped commands can
     // reuse a single manager reply channel for the whole client lifetime.
     let state_reply = make_channel::<string>(1:uint);
 
     while true {
-        compare take_next_line(&mut buffer) {
-            Some(line) => {
-                let trimmed_line: string = line.trim();
-                let mut response: string = "";
-                if trimmed_line == "PING" {
-                    response = "PONG";
-                } else {
-                    // Keep manager channel send/recv in this socket task. Wrapping
-                    // them through sync helpers can fall back to blocking lowering.
-                    response = compare proto.parse_line(&line) {
-                        Success(cmd) => {
-                            ret compare cmd {
-                                proto.Ping() => "PONG";
-                                proto.WhoAmI() => {
-                                    let mut owned: uint = 0:uint;
-                                    let mut borrowed: uint = 0:uint;
-                                    let count: int = router.shards.__len() to int;
-                                    let mut i: int = 0;
-                                    while i < count {
-                                        let requests: Channel<manager.Message> = router.shards[i];
-                                        let reply = make_channel::<state.HoldCount>(1:uint);
-                                        let request: manager.Message = manager.Holds(client_id.__clone(), reply);
-                                        requests.send(own request);
-                                        let holds: state.HoldCount = compare reply.recv() {
-                                            Some(value) => value;
-                                            nothing => state.HoldCount { owned = 0:uint, borrowed = 0:uint };
-                                        };
-                                        owned = owned + holds.owned;
-                                        borrowed = borrowed + holds.borrowed;
-                                        i = i + 1;
-                                    }
-                                    ret "CLIENT id=" + client_id.__clone() + " owned=" + (owned to string) + " borrowed=" + (borrowed to string);
-                                }
-                                proto.Keys(pattern) => {
-                                    let mut keys: string[] = [];
-                                    let count: int = router.shards.__len() to int;
-                                    let mut i: int = 0;
-                                    while i < count {
-                                        let requests: Channel<manager.Message> = router.shards[i];
-                                        let reply = make_channel::<string[]>(1:uint);
-                                        let request: manager.Message = manager.Keys(clone_pattern(&pattern), reply);
-                                        requests.send(own request);
-                                        let shard_keys: string[] = compare reply.recv() {
-                                            Some(value) => value;
-                                            nothing => [];
-                                        };
-                                        let shard_key_count: int = shard_keys.__len() to int;
-                                        let mut j: int = 0;
-                                        while j < shard_key_count {
-                                            keys.push(clone(shard_keys[j]));
-                                            j = j + 1;
+        let mut pending: byte[] = [];
+        while true {
+            compare take_next_line(&mut buffer) {
+                Some(line) => {
+                    let mut response: string = "";
+                    if by.range_eq_ascii(buffer.data, line.body, &"PING") {
+                        response = "PONG";
+                    } else {
+                        // Keep manager channel send/recv in this socket task. Wrapping
+                        // them through sync helpers can fall back to blocking lowering.
+                        response = compare proto.parse_line_bytes(&buffer.data, line.body) {
+                            Success(cmd) => {
+                                ret compare cmd {
+                                    proto.Ping() => "PONG";
+                                    proto.WhoAmI() => {
+                                        let mut owned: uint = 0:uint;
+                                        let mut borrowed: uint = 0:uint;
+                                        let count: int = router.shards.__len() to int;
+                                        let mut i: int = 0;
+                                        while i < count {
+                                            let requests: Channel<manager.Message> = router.shards[i];
+                                            let reply = make_channel::<state.HoldCount>(1:uint);
+                                            let request: manager.Message = manager.Holds(client_id.__clone(), reply);
+                                            requests.send(own request);
+                                            let holds: state.HoldCount = compare reply.recv() {
+                                                Some(value) => value;
+                                                nothing => state.HoldCount { owned = 0:uint, borrowed = 0:uint };
+                                            };
+                                            owned = owned + holds.owned;
+                                            borrowed = borrowed + holds.borrowed;
+                                            i = i + 1;
                                         }
-                                        i = i + 1;
+                                        ret "CLIENT id=" + client_id.__clone() + " owned=" + (owned to string) + " borrowed=" + (borrowed to string);
                                     }
-                                    server_sort_strings(&mut keys);
-                                    ret proto.format_list(&keys);
-                                }
-                                proto.Disconnect() => {
-                                    let count: int = router.shards.__len() to int;
-                                    let mut i: int = 0;
-                                    while i < count {
-                                        let requests: Channel<manager.Message> = router.shards[i];
-                                        let reply = make_channel::<string>(1:uint);
-                                        let request: manager.Message = manager.Apply(client_id.__clone(), proto.Disconnect(), reply);
+                                    proto.Keys(pattern) => {
+                                        let mut keys: string[] = [];
+                                        let count: int = router.shards.__len() to int;
+                                        let mut i: int = 0;
+                                        while i < count {
+                                            let requests: Channel<manager.Message> = router.shards[i];
+                                            let reply = make_channel::<string[]>(1:uint);
+                                            let request: manager.Message = manager.Keys(clone_pattern(&pattern), reply);
+                                            requests.send(own request);
+                                            let shard_keys: string[] = compare reply.recv() {
+                                                Some(value) => value;
+                                                nothing => [];
+                                            };
+                                            let shard_key_count: int = shard_keys.__len() to int;
+                                            let mut j: int = 0;
+                                            while j < shard_key_count {
+                                                keys.push(clone(shard_keys[j]));
+                                                j = j + 1;
+                                            }
+                                            i = i + 1;
+                                        }
+                                        server_sort_strings(&mut keys);
+                                        ret proto.format_list(&keys);
+                                    }
+                                    proto.Disconnect() => {
+                                        let count: int = router.shards.__len() to int;
+                                        let mut i: int = 0;
+                                        while i < count {
+                                            let requests: Channel<manager.Message> = router.shards[i];
+                                            let reply = make_channel::<string>(1:uint);
+                                            let request: manager.Message = manager.Apply(client_id.__clone(), proto.Disconnect(), reply);
+                                            requests.send(own request);
+                                            let _ = reply.recv();
+                                            i = i + 1;
+                                        }
+                                        ret "OK";
+                                    }
+                                    proto.New(key, value) => {
+                                        let requests: Channel<manager.Message> = shard_for_key(&router, &key);
+                                        let request: manager.Message = manager.Apply(client_id.__clone(), proto.New(key, value), state_reply);
                                         requests.send(own request);
-                                        let _ = reply.recv();
-                                        i = i + 1;
+                                        ret compare state_reply.recv() {
+                                            Some(response) => response;
+                                            nothing => stopped_router_response();
+                                        };
                                     }
-                                    ret "OK";
-                                }
-                                proto.New(key, value) => {
-                                    let requests: Channel<manager.Message> = shard_for_key(&router, &key);
-                                    let request: manager.Message = manager.Apply(client_id.__clone(), proto.New(key, value), state_reply);
-                                    requests.send(own request);
-                                    ret compare state_reply.recv() {
-                                        Some(response) => response;
-                                        nothing => stopped_router_response();
-                                    };
-                                }
-                                proto.Get(key) => {
-                                    let requests: Channel<manager.Message> = shard_for_key(&router, &key);
-                                    let request: manager.Message = manager.GetValue(key, state_reply);
-                                    requests.send(own request);
-                                    ret compare state_reply.recv() {
-                                        Some(response) => response;
-                                        nothing => stopped_router_response();
-                                    };
-                                }
-                                proto.Set(key, value) => {
-                                    let requests: Channel<manager.Message> = shard_for_key(&router, &key);
-                                    let request: manager.Message = manager.SetValue(client_id.__clone(), key, value, state_reply);
-                                    requests.send(own request);
-                                    ret compare state_reply.recv() {
-                                        Some(response) => response;
-                                        nothing => stopped_router_response();
-                                    };
-                                }
-                                proto.SetIf(key, value, expected) => {
-                                    let requests: Channel<manager.Message> = shard_for_key(&router, &key);
-                                    let request: manager.Message = manager.Apply(client_id.__clone(), proto.SetIf(key, value, expected), state_reply);
-                                    requests.send(own request);
-                                    ret compare state_reply.recv() {
-                                        Some(response) => response;
-                                        nothing => stopped_router_response();
-                                    };
-                                }
-                                proto.Del(key) => {
-                                    let requests: Channel<manager.Message> = shard_for_key(&router, &key);
-                                    let request: manager.Message = manager.Apply(client_id.__clone(), proto.Del(key), state_reply);
-                                    requests.send(own request);
-                                    ret compare state_reply.recv() {
-                                        Some(response) => response;
-                                        nothing => stopped_router_response();
-                                    };
-                                }
-                                proto.Own(key, ttl) => {
-                                    let requests: Channel<manager.Message> = shard_for_key(&router, &key);
-                                    let request: manager.Message = manager.Apply(client_id.__clone(), proto.Own(key, ttl), state_reply);
-                                    requests.send(own request);
-                                    ret compare state_reply.recv() {
-                                        Some(response) => response;
-                                        nothing => stopped_router_response();
-                                    };
-                                }
-                                proto.Borrow(key, ttl) => {
-                                    let requests: Channel<manager.Message> = shard_for_key(&router, &key);
-                                    let request: manager.Message = manager.Apply(client_id.__clone(), proto.Borrow(key, ttl), state_reply);
-                                    requests.send(own request);
-                                    ret compare state_reply.recv() {
-                                        Some(response) => response;
-                                        nothing => stopped_router_response();
-                                    };
-                                }
-                                proto.Release(key) => {
-                                    let requests: Channel<manager.Message> = shard_for_key(&router, &key);
-                                    let request: manager.Message = manager.Apply(client_id.__clone(), proto.Release(key), state_reply);
-                                    requests.send(own request);
-                                    ret compare state_reply.recv() {
-                                        Some(response) => response;
-                                        nothing => stopped_router_response();
-                                    };
-                                }
-                                proto.Seal(key) => {
-                                    let requests: Channel<manager.Message> = shard_for_key(&router, &key);
-                                    let request: manager.Message = manager.Apply(client_id.__clone(), proto.Seal(key), state_reply);
-                                    requests.send(own request);
-                                    ret compare state_reply.recv() {
-                                        Some(response) => response;
-                                        nothing => stopped_router_response();
-                                    };
-                                }
-                                proto.Stat(key) => {
-                                    let requests: Channel<manager.Message> = shard_for_key(&router, &key);
-                                    let request: manager.Message = manager.Apply(client_id.__clone(), proto.Stat(key), state_reply);
-                                    requests.send(own request);
-                                    ret compare state_reply.recv() {
-                                        Some(response) => response;
-                                        nothing => stopped_router_response();
-                                    };
-                                }
+                                    proto.Get(key) => {
+                                        let requests: Channel<manager.Message> = shard_for_key(&router, &key);
+                                        let request: manager.Message = manager.GetValue(key, state_reply);
+                                        requests.send(own request);
+                                        ret compare state_reply.recv() {
+                                            Some(response) => response;
+                                            nothing => stopped_router_response();
+                                        };
+                                    }
+                                    proto.Set(key, value) => {
+                                        let requests: Channel<manager.Message> = shard_for_key(&router, &key);
+                                        let request: manager.Message = manager.SetValue(client_id.__clone(), key, value, state_reply);
+                                        requests.send(own request);
+                                        ret compare state_reply.recv() {
+                                            Some(response) => response;
+                                            nothing => stopped_router_response();
+                                        };
+                                    }
+                                    proto.SetIf(key, value, expected) => {
+                                        let requests: Channel<manager.Message> = shard_for_key(&router, &key);
+                                        let request: manager.Message = manager.Apply(client_id.__clone(), proto.SetIf(key, value, expected), state_reply);
+                                        requests.send(own request);
+                                        ret compare state_reply.recv() {
+                                            Some(response) => response;
+                                            nothing => stopped_router_response();
+                                        };
+                                    }
+                                    proto.Del(key) => {
+                                        let requests: Channel<manager.Message> = shard_for_key(&router, &key);
+                                        let request: manager.Message = manager.Apply(client_id.__clone(), proto.Del(key), state_reply);
+                                        requests.send(own request);
+                                        ret compare state_reply.recv() {
+                                            Some(response) => response;
+                                            nothing => stopped_router_response();
+                                        };
+                                    }
+                                    proto.Own(key, ttl) => {
+                                        let requests: Channel<manager.Message> = shard_for_key(&router, &key);
+                                        let request: manager.Message = manager.Apply(client_id.__clone(), proto.Own(key, ttl), state_reply);
+                                        requests.send(own request);
+                                        ret compare state_reply.recv() {
+                                            Some(response) => response;
+                                            nothing => stopped_router_response();
+                                        };
+                                    }
+                                    proto.Borrow(key, ttl) => {
+                                        let requests: Channel<manager.Message> = shard_for_key(&router, &key);
+                                        let request: manager.Message = manager.Apply(client_id.__clone(), proto.Borrow(key, ttl), state_reply);
+                                        requests.send(own request);
+                                        ret compare state_reply.recv() {
+                                            Some(response) => response;
+                                            nothing => stopped_router_response();
+                                        };
+                                    }
+                                    proto.Release(key) => {
+                                        let requests: Channel<manager.Message> = shard_for_key(&router, &key);
+                                        let request: manager.Message = manager.Apply(client_id.__clone(), proto.Release(key), state_reply);
+                                        requests.send(own request);
+                                        ret compare state_reply.recv() {
+                                            Some(response) => response;
+                                            nothing => stopped_router_response();
+                                        };
+                                    }
+                                    proto.Seal(key) => {
+                                        let requests: Channel<manager.Message> = shard_for_key(&router, &key);
+                                        let request: manager.Message = manager.Apply(client_id.__clone(), proto.Seal(key), state_reply);
+                                        requests.send(own request);
+                                        ret compare state_reply.recv() {
+                                            Some(response) => response;
+                                            nothing => stopped_router_response();
+                                        };
+                                    }
+                                    proto.Stat(key) => {
+                                        let requests: Channel<manager.Message> = shard_for_key(&router, &key);
+                                        let request: manager.Message = manager.Apply(client_id.__clone(), proto.Stat(key), state_reply);
+                                        requests.send(own request);
+                                        ret compare state_reply.recv() {
+                                            Some(response) => response;
+                                            nothing => stopped_router_response();
+                                        };
+                                    }
+                                };
+                            }
+                            err => proto.format_parse_error(&err);
                             };
-                        }
-                        err => proto.format_parse_error(&err);
-                        };
-                };
-                let data: byte[] = line_bytes(response);
-                let write_res = net.write_all(&conn, data).await();
-                let ok: bool = compare write_res {
-                    Success(net_write_res) => compare net_write_res {
-                        Success(_) => true;
-                        _ => false;
                     };
-                    Cancelled() => false;
-                };
-                if !ok {
+                    append_line_bytes(&mut pending, &response);
+                    continue;
+                }
+                nothing => {
+                    buffer.compact();
                     break;
                 }
-                continue;
-            }
-            nothing => {}
+            };
         };
+
+        if pending.__len() != 0:uint {
+            let write_res = net.write_all(&conn, pending).await();
+            let ok: bool = compare write_res {
+                Success(net_write_res) => compare net_write_res {
+                    Success(_) => true;
+                    _ => false;
+                };
+                Cancelled() => false;
+            };
+            if !ok {
+                break;
+            }
+            continue;
+        }
 
         let read_res = net.read_some(&conn, read_cap).await();
         compare read_res {

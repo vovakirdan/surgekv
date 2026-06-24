@@ -1,32 +1,23 @@
 pragma module;
 
-fn append_chunk(buffer: &mut string, bytes: &byte[]) -> Erring<nothing, Error> {
-    compare string.from_bytes(bytes) {
-        Success(text) => {
-            *buffer = *buffer + text;
-            return Success(nothing);
-        }
-        _ => {
-            return Error {
-                message = "request must be valid utf-8",
-                code = proto.PROTO_ERR_BAD_CMD
-            };
-        }
-    };
+fn append_chunk(buffer: &mut by.ByteBuffer, bytes: &byte[]) -> Erring<nothing, Error> {
+    return buffer.append_range(bytes, by.all(bytes));
 }
 
-fn take_next_line(buffer: &mut string) -> string? {
-    let newline_idx: int = buffer.find("\n");
-    if newline_idx < 0 {
-        return nothing;
-    }
-
-    let length: int = buffer.__len() to int;
-    let line: string = buffer[[0..newline_idx]].trim_end();
-    if newline_idx + 1 >= length {
-        *buffer = "";
-    } else {
-        *buffer = buffer[[newline_idx + 1..length]];
-    }
-    return Some(line);
+fn take_next_line(buffer: &mut by.ByteBuffer) -> Option<by.ByteLine> {
+    let line: by.ByteLine = compare buffer.peek_line_lf() {
+        Some(value) => value;
+        nothing => {
+            return nothing;
+        }
+    };
+    let count: uint = line.next - buffer.start;
+    compare buffer.consume(count) {
+        Success(_) => {
+            return Some(line);
+        }
+        _ => {
+            return nothing;
+        }
+    };
 }
